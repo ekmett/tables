@@ -39,6 +39,8 @@ module Data.Table
   -- * Implementation Details
   , Tabular(..)
   , Keyed(..)
+  , ColumnType(..), Primary, Secondary, Other
+  , Uniqueness(..), Unique, NonUnique
   ) where
 
 import Control.Applicative hiding (empty)
