@@ -12,8 +12,18 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+-----------------------------------------------------------------------------
+-- |
+-- Module      :  Data.Table
+-- Copyright   :  (C) 2012 Edward Kmett,
+-- License     :  BSD-style (see the file LICENSE)
+--
+-- Maintainer  :  Edward Kmett <ekmett@gmail.com>
+-- Stability   :  experimental
+-- Portability :  non-portable
+--
+----------------------------------------------------------------------------
 module Data.Table
-
   (
   -- * Tables
     Table(..)
