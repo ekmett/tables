@@ -43,41 +43,38 @@ class HasFooKeys t a | t -> a where
 instance HasFooKeys (Foo a) a where
   foo    = id
   fooId  = key FooId
-  fooBar = key FooBar
+  fooBar = nokey _fooBar
   fooBaz = key FooBaz
 
 instance Tabular (Foo a) where
   type PKT (Foo a) = Int
   data Column (Foo a) k b where
     FooId  :: Column (Foo a) Primary Int
-    FooBar :: Column (Foo a) Other a
     FooBaz :: Column (Foo a) (Secondary NonUnique) Double
 
   data Tab (Foo a) = FooTab
     {-# UNPACK #-} !Int
     (Index (Foo a) Primary Int)
-    (Index (Foo a) Other a)
     (Index (Foo a) (Secondary NonUnique) Double)
 
   val FooId  = _fooId
-  val FooBar = _fooBar
   val FooBaz = _fooBaz
 
   primaryKey = fooId
 
   primarily (Fob FooId) r = r
 
-  tabulate f = FooTab 0 (f fooId) (f fooBar) (f fooBaz)
+  tabulate f = FooTab 0 (f fooId) (f fooBaz)
 
-  ixMeta (FooTab _ x _ _) (Fob FooId)  = x
-  ixMeta (FooTab _ _ x _) (Fob FooBar) = x
-  ixMeta (FooTab _ _ _ x) (Fob FooBaz) = x
+  ixMeta (FooTab _ x _) (Fob FooId)  = x
+  ixMeta (FooTab _ _ x) (Fob FooBaz) = x
+  ixMeta _              (NoFob _)    = OtherIndex
 
-  forMeta (FooTab n x y z) f = FooTab n <$> f fooId x <*> f fooBar y <*> f fooBaz z
+  forMeta (FooTab n x z) f = FooTab n <$> f fooId x <*> f fooBaz z
 
-  prim = indexed $ \ f (FooTab n x y z) -> f (FooId :: Column (Foo a) Primary Int) x <&> \x' -> FooTab n x' y z
+  prim = indexed $ \ f (FooTab n x z) -> f (FooId :: Column (Foo a) Primary Int) x <&> \x' -> FooTab n x' z
 
-  autoKey = autoIncrement $ \f (FooTab n x y z) -> f n <&> \n' -> FooTab n' x y z
+  autoKey = autoIncrement $ \f (FooTab n x z) -> f n <&> \n' -> FooTab n' x z
 
 test :: Table (Foo String)
 test = [Foo 0 "One" 1.0, Foo 0 "Two" 2.0, Foo 0 "Three" 3.0, Foo 0 "Four" 4.0, Foo 0 "Five" 5.0]^.table
