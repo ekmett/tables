@@ -17,7 +17,7 @@ notifications:
   irc:
     channels:
       - "irc.freenode.org#happs"
-    skip_join: true
+    # skip_join: true
     template:
       - "\x0313tables\x03/\x0306%{branch}\x03 \x0314%{commit}\x03 %{build_url} %{message}"
 
