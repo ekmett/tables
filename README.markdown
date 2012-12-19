@@ -1,7 +1,7 @@
 Tables
 ======
 
-[![Build Status](https://secure.travis-ci.org/ekmett/tables.png?branch=master)](http://travis-ci.org/ekmett/tables)
+[![Build Status](https://secure.travis-ci.org/lens/tables.png?branch=master)](http://travis-ci.org/lens/tables)
 
 This package provides a simple in memory data table with multiple indices.
 
