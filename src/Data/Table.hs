@@ -41,6 +41,8 @@ module Data.Table
   , Keyed(..)
   , ColumnType(..), Primary, Secondary, Other
   , Uniqueness(..), Unique, NonUnique
+  , Index(..)
+  , Fob(..)
   ) where
 
 import Control.Applicative hiding (empty)
