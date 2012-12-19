@@ -7,6 +7,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -57,6 +58,7 @@ module Data.Table
 
 import Control.Applicative hiding (empty)
 import Control.Lens
+import Data.Data
 import Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Functor.Identity
@@ -190,6 +192,22 @@ fob (NoFob l) = nokey l
 data Table t where
   EmptyTable :: Table t
   Table :: Tabular t => Tab t -> Table t
+  deriving Typeable
+
+instance (Tabular t, Data t) => Data (Table t) where
+  gfoldl f z im = z fromList `f` toList im
+  toConstr _ = fromListConstr
+  gunfold k z c = case constrIndex c of
+    1 -> k (z fromList)
+    _ -> error "gunfold"
+  dataTypeOf _ = tableDataType
+  dataCast1 f = gcast1 f
+
+fromListConstr :: Constr
+fromListConstr = mkConstr tableDataType "fromList" [] Prefix
+
+tableDataType :: DataType
+tableDataType = mkDataType "Data.Table.Table" [fromListConstr]
 
 instance Monoid (Table t) where
   mempty               = EmptyTable

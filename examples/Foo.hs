@@ -5,6 +5,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -13,6 +14,7 @@ module Foo where
 
 import Control.Applicative hiding (empty)
 import Control.Lens
+import Data.Data
 import Data.Foldable as Foldable
 import Data.Function (on)
 import Data.Functor.Identity
@@ -30,7 +32,7 @@ import Prelude hiding (null)
 -- * Example Table
 
 data Foo a = Foo { __fooId :: Int, __fooBar :: a, __fooBaz :: Double }
-  deriving (Eq,Ord,Show,Read)
+  deriving (Eq,Ord,Show,Read,Data,Typeable)
 
 makeLenses ''Foo
 
