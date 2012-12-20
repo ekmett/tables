@@ -78,7 +78,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   data Column t :: (* -> *) -> * -> *
 
   -- | evaluate an internal column
-  val        :: Column t ty a -> Simple Lens t a
+  val        :: Column t ty a -> Lens' t a
 
   -- | Every relation has one primary key
   primaryKey :: Key Primary t (PKT t)
@@ -96,14 +96,14 @@ class Ord (PKT t) => Tabular (t :: *) where
   forMeta    :: Applicative h => Tab t -> (forall k a . Key k t a -> Index t k a -> h (Index t k a)) -> h (Tab t)
 
   -- | Find the primary key in a table
-  prim       :: SimpleIndexedLens (Column t Primary (PKT t)) (Tab t) (Index t Primary (PKT t))
+  prim       :: IndexedLens' (Column t Primary (PKT t)) (Tab t) (Index t Primary (PKT t))
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments, etc.
   autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
   autoKey _ = Nothing
 
 -- | This lets you define 'autoKey' using a lens to a counter stored in the Tab.
-autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Simple Lens (Tab t) a -> t -> Maybe (Tab t -> (t, Tab t))
+autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Lens' (Tab t) a -> t -> Maybe (Tab t -> (t, Tab t))
 autoIncrement l t
   | t^.primaryKey == 0 = Just $ \ tbl -> tbl & l %%~ \ i -> let i' = i + 1 in i' `seq` (t & primaryKey .~ i' , i')
   | otherwise          = Nothing
@@ -114,7 +114,7 @@ data Index t k a where
   SupplementalIndex :: Ord a => Map a [t] -> Index t (Secondary NonUnique) a
   OtherIndex        :: Index t Other a
 
-primaryMap :: Tabular t => Simple Lens (Index t Primary (PKT t)) (Map (PKT t) t)
+primaryMap :: Tabular t => Lens' (Index t Primary (PKT t)) (Map (PKT t) t)
 primaryMap f (PrimaryIndex m) = PrimaryIndex <$> f m
 {-# INLINE primaryMap #-}
 
@@ -159,8 +159,8 @@ instance IsColumn Other a where
 type Key u t a = forall k f. (Keyed u k, Functor f) => k (a -> f a) (t -> f t)
 
 class Keyed u k where
-  key :: (Tabular t, Functor f) => Column t u a -> SimpleOverloaded k f t a
-  nokey :: (Functor f, u ~ Other) => SimpleLens t a -> SimpleOverloaded k f t a
+  key :: (Tabular t, Functor f) => Column t u a -> Overloaded' k f t a
+  nokey :: (Functor f, u ~ Other) => Lens' t a -> Overloaded' k f t a
 
 instance Keyed u (->) where
   key     = val
@@ -182,7 +182,7 @@ instance u ~ v => Keyed u (Fob v) where
   key   = Fob
   nokey l = NoFob l
 
-fob :: forall u t a. Tabular t => Keying u t a -> Key u t a
+fob :: Tabular t => Keying u t a -> Key u t a
 fob (Fob k)   = key k
 fob (NoFob l) = nokey l
 {-# INLINE fob #-}
@@ -325,11 +325,11 @@ insert t0 r0 = case autoKey t0 of
 -- @'from' 'table' '.' 'table' ≡ 'id'@
 --
 -- always holds.
-table :: Tabular t => Simple Lens [t] (Table t)
+table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
-with :: Ord a => Keying u t a -> (forall x. Ord x => x -> x -> Bool) -> a -> Simple Lens (Table t) (Table t)
+with :: Ord a => Keying u t a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
 with _   _   _ f EmptyTable  = f EmptyTable
 with ky cmp a f r@(Table m)
     | lt && eq && gt = f r -- all rows
@@ -362,20 +362,20 @@ with ky cmp a f r@(Table m)
 {-# INLINE with #-}
 
 -- | @'group' :: 'Key' u s a -> 'SimpleIndexedTraversal' a ('Table' s) ('Table' s)@
-group :: forall k f u s a. (Indexable a k, Applicative f, Ord a) => Keying u s a -> SimpleOverloaded k f (Table s) (Table s)
-group ky = indexed $ \(f :: a -> Table s -> f (Table s)) r -> case r of
+group :: forall k f u s a. (Indexable a k, Applicative f, Ord a) => Keying u s a -> IndexedLensLike' k f (Table s) (Table s)
+group ky f r = case r of
   EmptyTable -> pure EmptyTable
   Table m    -> case ixMeta m ky of
-    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> f (v^.primaryKey) (singleton v)) <&> mconcat
-    CandidateIndex idx    -> traverse (\(k,v) -> f k (singleton v)) (Map.toList idx) <&> mconcat
-    SupplementalIndex idx -> traverse (\(k,vs) -> f k (fromList vs)) (Map.toList idx) <&> mconcat
+    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (v^.primaryKey) (singleton v)) <&> mconcat
+    CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
+    SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
     OtherIndex
       | idx <- Map.fromListWith (++) (m^..prim.primaryMap.folded.to(\v -> (v^.fob ky, [v])))
-      -> traverse (\(k,vs) -> f k (fromList vs)) (Map.toList idx) <&> mconcat
+      -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
 {-# INLINE group #-}
 
 -- * Traverse all of the rows in a table without changing any types
-rows' :: Simple Traversal (Table t) t
+rows' :: Traversal' (Table t) t
 rows' _ EmptyTable = pure EmptyTable
 rows' f r@Table{} = Prelude.foldr insert empty <$> traverse f (toList r)
 {-# INLINE rows' #-}
