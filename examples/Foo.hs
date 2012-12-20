@@ -22,10 +22,8 @@ import Data.List ((\\))
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid
-import Data.Proxy
 import Data.Table
 import Data.Traversable
-import Prelude.Extras
 import qualified Prelude
 import Prelude hiding (null)
 
