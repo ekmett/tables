@@ -72,7 +72,7 @@ instance Tabular (Foo a) where
 
   forMeta (FooTab n x z) f = FooTab n <$> f fooId x <*> f fooBaz z
 
-  prim = indexed $ \ f (FooTab n x z) -> f (FooId :: Column (Foo a) Primary Int) x <&> \x' -> FooTab n x' z
+  prim f (FooTab n x z) = indexed f (FooId :: Column (Foo a) Primary Int) x <&> \x' -> FooTab n x' z
 
   autoKey = autoIncrement $ \f (FooTab n x z) -> f n <&> \n' -> FooTab n' x z
 
