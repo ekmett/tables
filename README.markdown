@@ -64,9 +64,11 @@ fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
          , Foo {fooId = 4, fooBar = "Three", fooBaz = 3.0}
          , Foo {fooId = 5, fooBar = "Four", fooBaz = 4.0}
          , Foo {fooId = 6, fooBar = "Five", fooBaz = 5.0} ]
+```
 
 We can do grouping by arbitrary functions or fields similarly
 
+```haskell
 >>> test ^@.. group (length.fooBar)
 [ (3, fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
                , Foo {fooId = 2, fooBar = "Two", fooBaz = 2.0} ])
@@ -74,6 +76,7 @@ We can do grouping by arbitrary functions or fields similarly
                , Foo {fooId = 5, fooBar = "Five", fooBaz = 5.0} ])
 , (5, fromList [Foo {fooId = 3, fooBar = "Three", fooBaz = 3.0} ])
 ]
+```
 
 Contact Information
 -------------------
