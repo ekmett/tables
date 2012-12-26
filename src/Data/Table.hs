@@ -44,7 +44,10 @@ module Data.Table
   , autoIncrement
   -- * Implementation Details
   , Tabular(..)
-  , KeyType(..), Primary, Candidate, Supplemental
+  , KeyType(..)
+  , Primary
+  , Candidate
+  , Supplemental
   , Index(..)
   ) where
 
@@ -56,6 +59,7 @@ import Data.Function (on)
 import Data.Functor.Identity
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Data.Maybe
 import Data.Monoid
 import Data.Traversable
 import qualified Prelude
@@ -73,10 +77,10 @@ class Ord (PKT t) => Tabular (t :: *) where
   data Key (k :: * -> *) t ::  * -> *
 
   -- | evaluate an internal column
-  val        :: Key k t a -> t -> a
+  val     :: Key k t a -> t -> a
 
   -- | Every relation has one primary key
-  primaryKey :: Lens' t (PKT t)
+  primary :: Key Primary t (PKT t)
 
   -- | ... and so if you find one, it had better be that one!
   primarily  :: Key Primary t a -> ((a ~ PKT t) => r) -> r
@@ -97,12 +101,20 @@ class Ord (PKT t) => Tabular (t :: *) where
   autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
   autoKey _ = Nothing
 
--- | This lets you define 'autoKey' using a lens to a counter stored in the Tab.
-autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Lens' (Tab t) a -> t -> Maybe (Tab t -> (t, Tab t))
-autoIncrement l t
-  | t^.primaryKey == 0 = Just $ \ tbl -> tbl & l %%~ \ i -> let i' = i + 1 in i' `seq` (t & primaryKey .~ i' , i')
-  | otherwise          = Nothing
+-- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
+autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Loupe' t a -> t -> Maybe (Tab t -> (t, Tab t))
+autoIncrement pk t
+  | t ^# pk == 0 = Just $ \ tb -> (t & pk #~ 1 + fromMaybe 0 (tb^?prim.primaryMap.indicesOf traverseMax), tb)
+  | otherwise    = Nothing
+
+{-
+-- | This lets you define 'autoKey' using a lens to a counter stored in the 'Tab'.
+autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Loupe' t a -> LensLike' ((,) t) (Tab t) a -> t -> Maybe (Tab t -> (t, Tab t))
+autoIncrement pk l t
+  | t ^# pk == 0 = Just $ \ tbl -> tbl & l %%~ \ i -> let i' = i + 1 in i' `seq` (t & pk #~ i' , i')
+  | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
+-}
 
 data Index k t a where
   PrimaryIndex      :: Map a t            -> Index Primary      t a
@@ -170,10 +182,10 @@ instance Foldable Table where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forMeta tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . view primaryKey)) idx ts
+  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . val primary)) idx ts
   CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . val k)) idx ts
   SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (val k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon [] Prelude.null %~ let pys = view primaryKey <$> ys in filter (\e -> e^.primaryKey `Prelude.notElem` pys)
+    m & at ky . anon [] Prelude.null %~ let pys = val primary <$> ys in filter (\e -> val primary e `Prelude.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t
@@ -251,8 +263,9 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
-class With p t | p -> t where
-  with :: Ord a => p a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
+-- | Select a smaller, updateable subset of the rows of a table using an index or an arbitrary function.
+class With q t | q -> t where
+  with :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
 
 instance With ((->) t) t where
   with _  _   _ f EmptyTable  = f EmptyTable
@@ -295,23 +308,28 @@ instance (IsKeyType k, Tabular t) => With (Key k t) t where
         go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
-deleteWith :: (With p t, Ord a) => p a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
-deleteWith pa cmp a tbl = tbl & with pa cmp a .~ empty
+-- | Delete selected rows from a table
+--
+-- @'deleteWith' p cmp a t ≡ 'set' ('with' p cmp a) 'empty' t@
+deleteWith :: (With q t, Ord a) => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
+deleteWith p cmp a t = set (with p cmp a) empty t
 {-# INLINE deleteWith #-}
 
-class Group k t | k -> t where
-  -- | @'group' :: 'Key' u s a -> 'SimpleIndexedTraversal' a ('Table' s) ('Table' s)@
-  group :: (Indexable a p, Applicative f, Ord a) => k a -> IndexedLensLike' p f (Table t) (Table t)
+class Group q t | q -> t where
+  group :: (Indexable a p, Applicative f, Ord a) => q a -> IndexedLensLike' p f (Table t) (Table t)
 
+-- | Group by an arbitrary function
 instance Group ((->) t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat where 
     idx = Map.fromListWith (++) (m^..prim.primaryMap.folded.to(\v -> (ky v, [v])))
+  {-# INLINE group #-}
 
+-- | Group by an index
 instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixMeta m ky of
-    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (v^.primaryKey) (singleton v)) <&> mconcat
+    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (val primary v) (singleton v)) <&> mconcat
     CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
   {-# INLINE group #-}
