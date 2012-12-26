@@ -44,8 +44,8 @@ instance Tabular (Foo a) where
     (Index Primary   (Foo a) Int)
     (Index Candidate (Foo a) Double)
 
-  val FooId  = fooId
-  val FooBaz = fooBaz
+  key FooId  = fooId
+  key FooBaz = fooBaz
 
   primary = FooId
 

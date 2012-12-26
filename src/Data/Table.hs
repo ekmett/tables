@@ -77,7 +77,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   data Key (k :: * -> *) t ::  * -> *
 
   -- | evaluate an internal column
-  val     :: Key k t a -> t -> a
+  key     :: Key k t a -> t -> a
 
   -- | Every relation has one primary key
   primary :: Key Primary t (PKT t)
@@ -182,10 +182,10 @@ instance Foldable Table where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forMeta tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . val primary)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . val k)) idx ts
-  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (val k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon [] Prelude.null %~ let pys = val primary <$> ys in filter (\e -> val primary e `Prelude.notElem` pys)
+  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . key primary)) idx ts
+  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . key k)) idx ts
+  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (key k t, [t]) | t <- ts ] $ \m ky ys ->
+    m & at ky . anon [] Prelude.null %~ let pys = key primary <$> ys in filter (\e -> key primary e `Prelude.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t
@@ -211,17 +211,17 @@ null (Table m)  = Map.null (m^.primaryMap)
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
 singleton row = Table $ tabulate $ \ k -> case keyType k of
-  Primary      -> primarily k $ PrimaryIndex $ Map.singleton (val k row) row
-  Candidate    -> CandidateIndex             $ Map.singleton (val k row) row
-  Supplemental -> SupplementalIndex          $ Map.singleton (val k row) [row]
+  Primary      -> primarily k $ PrimaryIndex $ Map.singleton (key k row) row
+  Candidate    -> CandidateIndex             $ Map.singleton (key k row) row
+  Supplemental -> SupplementalIndex          $ Map.singleton (key k row) [row]
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
 collisions t (Table m)  = getConst $ forMeta m $ \k i -> Const $ case i of
-  PrimaryIndex idx   -> primarily k $ idx^..ix (val k t)
-  CandidateIndex idx ->               idx^..ix (val k t)
+  PrimaryIndex idx   -> primarily k $ idx^..ix (key k t)
+  CandidateIndex idx ->               idx^..ix (key k t)
   _                  -> []
 {-# INLINE collisions #-}
 
@@ -243,9 +243,9 @@ insert t0 r0 = case autoKey t0 of
   go t r = case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forMeta m $ \k i -> Identity $ case i of
-      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (val k t) ?~ t
-      CandidateIndex idx    -> CandidateIndex             $ idx & at (val k t) ?~ t
-      SupplementalIndex idx -> SupplementalIndex          $ idx & at (val k t) . anon [] Prelude.null %~ (t:)
+      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (key k t) ?~ t
+      CandidateIndex idx    -> CandidateIndex             $ idx & at (key k t) ?~ t
+      SupplementalIndex idx -> SupplementalIndex          $ idx & at (key k t) . anon [] Prelude.null %~ (t:)
   {-# INLINE go #-}
 {-# INLINE insert #-}
 
@@ -329,7 +329,7 @@ instance Group ((->) t) t where
 instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixMeta m ky of
-    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (val primary v) (singleton v)) <&> mconcat
+    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (key primary v) (singleton v)) <&> mconcat
     CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
   {-# INLINE group #-}
