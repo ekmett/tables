@@ -95,7 +95,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   forMeta    :: Applicative h => Tab t -> (forall k a . Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
 
   -- | Find the primary key in a table
-  prim       :: IndexedLens' (Key Primary t (PKT t)) (Tab t) (Index Primary t (PKT t))
+  prim       :: Lens' (Tab t) (Index Primary t (PKT t))
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments, etc.
   autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
@@ -104,35 +104,29 @@ class Ord (PKT t) => Tabular (t :: *) where
 -- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
 autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Loupe' t a -> t -> Maybe (Tab t -> (t, Tab t))
 autoIncrement pk t
-  | t ^# pk == 0 = Just $ \ tb -> (t & pk #~ 1 + fromMaybe 0 (tb^?prim.primaryMap.indicesOf traverseMax), tb)
+  | t ^# pk == 0 = Just $ \ tb -> (t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax), tb)
   | otherwise    = Nothing
-
-{-
--- | This lets you define 'autoKey' using a lens to a counter stored in the 'Tab'.
-autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Loupe' t a -> LensLike' ((,) t) (Tab t) a -> t -> Maybe (Tab t -> (t, Tab t))
-autoIncrement pk l t
-  | t ^# pk == 0 = Just $ \ tbl -> tbl & l %%~ \ i -> let i' = i + 1 in i' `seq` (t & pk #~ i' , i')
-  | otherwise    = Nothing
-{-# INLINE autoIncrement #-}
--}
 
 data Index k t a where
   PrimaryIndex      :: Map a t            -> Index Primary      t a
   CandidateIndex    :: Ord a => Map a t   -> Index Candidate    t a
   SupplementalIndex :: Ord a => Map a [t] -> Index Supplemental t a
 
-primaryMap :: Tabular t => Lens' (Index Primary t (PKT t)) (Map (PKT t) t)
-primaryMap f (PrimaryIndex m) = PrimaryIndex <$> f m
+primaryMap :: Tabular t => Lens' (Tab t) (Map (PKT t) t)
+primaryMap = prim . \ f (PrimaryIndex m) -> PrimaryIndex <$> f m
 {-# INLINE primaryMap #-}
 
 -- * Overloaded keys
+
+------------------------------------------------------------------------------
+-- Table
+------------------------------------------------------------------------------
 
 data Table t where
   EmptyTable ::                       Table t
   Table      :: Tabular t => Tab t -> Table t
   deriving Typeable
 
--- | Using a virtual 'fromList' constructor
 instance (Tabular t, Data t) => Data (Table t) where
   gfoldl f z im = z fromList `f` toList im
   toConstr _ = fromListConstr
@@ -176,7 +170,7 @@ instance (Tabular t, Read t) => Read (Table t) where
 
 instance Foldable Table where
   foldMap _ EmptyTable = mempty
-  foldMap f (Table m)  = foldMapOf (prim.primaryMap.folded) f m
+  foldMap f (Table m)  = foldMapOf (primaryMap.folded) f m
   {-# INLINE foldMap #-}
 
 deleteCollisions :: Table t -> [t] -> Table t
@@ -205,7 +199,7 @@ empty = EmptyTable
 -- | Check to see if the relation is empty
 null :: Table t -> Bool
 null EmptyTable = True
-null (Table m)  = Map.null (m^.prim.primaryMap)
+null (Table m)  = Map.null (m^.primaryMap)
 {-# INLINE null #-}
 
 -- | Construct a relation with a single row
@@ -271,7 +265,7 @@ instance With ((->) t) t where
   with _  _   _ f EmptyTable  = f EmptyTable
   with ky cmp a f r@(Table m)
     | lt && eq && gt = f r
-    | lt || eq || gt = go $ m^..prim.primaryMap.folded.filtered (\row -> cmp (ky row) a)
+    | lt || eq || gt = go $ m^..primaryMap.folded.filtered (\row -> cmp (ky row) a)
     | otherwise      = f EmptyTable <&> mappend r
     where
       lt = cmp LT EQ
@@ -322,7 +316,7 @@ class Group q t | q -> t where
 instance Group ((->) t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat where 
-    idx = Map.fromListWith (++) (m^..prim.primaryMap.folded.to(\v -> (ky v, [v])))
+    idx = Map.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
   {-# INLINE group #-}
 
 -- | Group by an index
