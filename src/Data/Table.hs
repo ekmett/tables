@@ -156,11 +156,12 @@ instance IsColumn Other a where
   {-# INLINE columnType #-}
 
 -- * Overloaded keys
+
 type Key u t a = forall k f. (Keyed u k, Functor f) => k (a -> f a) (t -> f t)
 
 class Keyed u k where
-  key :: (Tabular t, Functor f) => Column t u a -> Overloaded' k f t a
-  nokey :: (Functor f, u ~ Other) => Lens' t a -> Overloaded' k f t a
+  key :: (Tabular t, Functor f) => Column t u a -> k (a -> f a) (t -> f t)
+  nokey :: (Functor f, u ~ Other) => Lens' t a -> k (a -> f a) (t -> f t)
 
 instance Keyed u (->) where
   key     = val
@@ -174,12 +175,21 @@ type instance CoF (x -> y) b = FunOf y b
 type family FunOf (x :: *) (b :: *) :: *
 type instance FunOf (f a) b = f b
 
+type family CoA (x :: *) :: *
+type instance CoA (x -> f_y) = x
+
+type family ArgOf (x :: *) :: *
+type instance ArgOf (f x) = x
+
+type family CoB (x :: *) :: *
+type instance CoB (x -> f_y) = ArgOf f_y
+
 data Fob u x y where
   Fob :: (CoA x ~ CoB x, CoA y ~ CoB y) => Column (CoA y) u (CoA x) -> Fob u x y
   NoFob :: (CoA x ~ CoB x, CoA y ~ CoB y) => (forall f. Functor f => (CoA x -> f (CoB x)) -> CoA y -> f (CoB y)) -> Fob Other x y
 
 instance u ~ v => Keyed u (Fob v) where
-  key   = Fob
+  key   col = Fob col
   nokey l = NoFob l
 
 fob :: Tabular t => Keying u t a -> Key u t a
