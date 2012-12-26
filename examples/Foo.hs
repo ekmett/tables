@@ -29,26 +29,26 @@ import Prelude hiding (null)
 
 -- * Example Table
 
-data Foo a = Foo { _fooId :: Int, _fooBar :: a, _fooBaz :: Double }
+data Foo a = Foo { fooId :: Int, fooBar :: a, fooBaz :: Double }
   deriving (Eq,Ord,Show,Read,Data,Typeable)
 
-makeLenses ''Foo
+makeLensesWith (defaultRules & lensField .~ \x -> Just (x ++ "_")) ''Foo
 
 instance Tabular (Foo a) where
   type PKT (Foo a) = Int
   data Key k (Foo a) b where
-    FooId  :: Key Primary               (Foo a) Int
-    FooBaz :: Key (Secondary NonUnique) (Foo a) Double
+    FooId  :: Key Primary   (Foo a) Int
+    FooBaz :: Key Candidate (Foo a) Double
 
   data Tab (Foo a) = FooTab
     {-# UNPACK #-} !Int
-    (Index Primary               (Foo a) Int)
-    (Index (Secondary NonUnique) (Foo a) Double)
+    (Index Primary   (Foo a) Int)
+    (Index Candidate (Foo a) Double)
 
-  val FooId  = _fooId
-  val FooBaz = _fooBaz
+  val FooId  = fooId
+  val FooBaz = fooBaz
 
-  primaryKey = fooId
+  primaryKey = fooId_
 
   primarily FooId r = r
 
