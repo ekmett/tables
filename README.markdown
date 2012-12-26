@@ -5,6 +5,76 @@ Tables
 
 This package provides simple in memory data tables with multiple indices.
 
+Examples
+--------
+
+So if load `examples/Foo.hs` into `ghci`, we start with:
+
+```haskell
+>>> test
+fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
+         , Foo {fooId = 2, fooBar = "Two", fooBaz = 2.0}
+         , Foo {fooId = 3, fooBar = "Three", fooBaz = 3.0}
+         , Foo {fooId = 4, fooBar = "Four", fooBaz = 4.0}
+         , Foo {fooId = 5, fooBar = "Five", fooBaz = 5.0} ]
+```
+
+We use uppercase constructor names to match on built-in keys
+
+```haskell
+>>> test ^. with FooId (<) 3
+fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
+         , Foo {fooId = 2, fooBar = "Two", fooBaz = 2.0} ]
+```
+
+Then we can use any lowercase field accessor (or any other function) to do a non-keyed lookup or filter
+
+```haskell
+>>> test ^. with (length . fooBar) (<=) 3
+fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
+         , Foo {fooId = 2, fooBar = "Two", fooBaz = 2.0} ]
+```
+
+You can delete by assigning to that filtered table:
+
+```haskell
+>>> test & with (length . fooBar) (<=) 3 .~ empty
+fromList [ Foo {fooId = 3, fooBar = "Three", fooBaz = 3.0}
+         , Foo {fooId = 4, fooBar = "Four", fooBaz = 4.0}
+         , Foo {fooId = 5, fooBar = "Five", fooBaz = 5.0} ]
+```
+
+You can edit the actual type of the fields if the table is configured to allow it:
+
+```haskell
+>>> test & rows.fooBar_ %~ length
+fromList [ Foo {fooId = 1, fooBar = 3, fooBaz = 1.0}
+         , Foo {fooId = 2, fooBar = 3, fooBaz = 2.0}
+         , Foo {fooId = 3, fooBar = 5, fooBaz = 3.0}
+         , Foo {fooId = 4, fooBar = 4, fooBaz = 4.0}
+         , Foo {fooId = 5, fooBar = 4, fooBaz = 5.0} ]
+```
+
+If you edit multiple fields, the edits all take place at the same time. so we can offset or swap a bunch of keys:
+
+```haskell
+>>> test & with FooId (>=) 2.rows.fooId_ +~ 1
+fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
+         , Foo {fooId = 3, fooBar = "Two", fooBaz = 2.0}
+         , Foo {fooId = 4, fooBar = "Three", fooBaz = 3.0}
+         , Foo {fooId = 5, fooBar = "Four", fooBaz = 4.0}
+         , Foo {fooId = 6, fooBar = "Five", fooBaz = 5.0} ]
+
+We can do grouping by arbitrary functions or fields similarly
+
+>>> test ^@.. group (length.fooBar)
+[ (3, fromList [ Foo {fooId = 1, fooBar = "One", fooBaz = 1.0}
+               , Foo {fooId = 2, fooBar = "Two", fooBaz = 2.0} ])
+, (4, fromList [ Foo {fooId = 4, fooBar = "Four", fooBaz = 4.0}
+               , Foo {fooId = 5, fooBar = "Five", fooBaz = 5.0} ])
+, (5, fromList [Foo {fooId = 3, fooBar = "Three", fooBaz = 3.0} ])
+]
+
 Contact Information
 -------------------
 
