@@ -29,50 +29,37 @@ import Prelude hiding (null)
 
 -- * Example Table
 
-data Foo a = Foo { __fooId :: Int, __fooBar :: a, __fooBaz :: Double }
+data Foo a = Foo { _fooId :: Int, _fooBar :: a, _fooBaz :: Double }
   deriving (Eq,Ord,Show,Read,Data,Typeable)
 
 makeLenses ''Foo
 
-class HasFooKeys t a | t -> a where
-  foo    :: Simple Lens t (Foo a)
-  fooId  :: Key Primary t Int
-  fooBar :: Key Other t a
-  fooBaz :: Key (Secondary NonUnique) t Double
-
-instance HasFooKeys (Foo a) a where
-  foo    = id
-  fooId  = key FooId
-  fooBar = nokey _fooBar
-  fooBaz = key FooBaz
-
 instance Tabular (Foo a) where
   type PKT (Foo a) = Int
-  data Column (Foo a) k b where
-    FooId  :: Column (Foo a) Primary Int
-    FooBaz :: Column (Foo a) (Secondary NonUnique) Double
+  data Key k (Foo a) b where
+    FooId  :: Key Primary               (Foo a) Int
+    FooBaz :: Key (Secondary NonUnique) (Foo a) Double
 
   data Tab (Foo a) = FooTab
     {-# UNPACK #-} !Int
-    (Index (Foo a) Primary Int)
-    (Index (Foo a) (Secondary NonUnique) Double)
+    (Index Primary               (Foo a) Int)
+    (Index (Secondary NonUnique) (Foo a) Double)
 
   val FooId  = _fooId
   val FooBaz = _fooBaz
 
   primaryKey = fooId
 
-  primarily (Fob FooId) r = r
+  primarily FooId r = r
 
-  tabulate f = FooTab 0 (f fooId) (f fooBaz)
+  tabulate f = FooTab 0 (f FooId) (f FooBaz)
 
-  ixMeta (FooTab _ x _) (Fob FooId)  = x
-  ixMeta (FooTab _ _ x) (Fob FooBaz) = x
-  ixMeta _              (NoFob _)    = OtherIndex
+  ixMeta (FooTab _ x _) FooId  = x
+  ixMeta (FooTab _ _ x) FooBaz = x
 
-  forMeta (FooTab n x z) f = FooTab n <$> f fooId x <*> f fooBaz z
+  forMeta (FooTab n x z) f = FooTab n <$> f FooId x <*> f FooBaz z
 
-  prim f (FooTab n x z) = indexed f (FooId :: Column (Foo a) Primary Int) x <&> \x' -> FooTab n x' z
+  prim f (FooTab n x z) = indexed f (FooId :: Key Primary (Foo a) Int) x <&> \x' -> FooTab n x' z
 
   autoKey = autoIncrement $ \f (FooTab n x z) -> f n <&> \n' -> FooTab n' x z
 

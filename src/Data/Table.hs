@@ -28,8 +28,6 @@ module Data.Table
   (
   -- * Tables
     Table(..)
-  -- * Keys
-  , Key
   -- ** Table Construction
   , empty
   , singleton
@@ -49,11 +47,9 @@ module Data.Table
   , autoIncrement
   -- * Implementation Details
   , Tabular(..)
-  , Keyed(..)
-  , ColumnType(..), Primary, Secondary, Other
+  , KeyType(..), Primary, Secondary, Other
   , Uniqueness(..), Unique, NonUnique
   , Index(..)
-  , Fob(..)
   ) where
 
 import Control.Applicative hiding (empty)
@@ -75,28 +71,28 @@ class Ord (PKT t) => Tabular (t :: *) where
   -- | The type used internally for tables
   data Tab t :: *
   -- | The type used internally for columns
-  data Column t :: (* -> *) -> * -> *
+  data Key (k :: * -> *) t ::  * -> *
 
   -- | evaluate an internal column
-  val        :: Column t ty a -> Lens' t a
+  val        :: Key k t a -> t -> a
 
   -- | Every relation has one primary key
-  primaryKey :: Key Primary t (PKT t)
+  primaryKey :: Lens' t (PKT t)
 
   -- | ... and so if you find one, it had better be that one!
-  primarily  :: Keying Primary t a -> ((a ~ PKT t) => r) -> r
+  primarily  :: Key Primary t a -> ((a ~ PKT t) => r) -> r
 
   -- | Construct a table given a function from key to index.
-  tabulate   :: (forall k a. IsColumn k a => Key k t a -> Index t k a) -> Tab t
+  tabulate   :: (forall k a. IsKey k a => Key k t a -> Index k t a) -> Tab t
 
   -- | Lookup an index
-  ixMeta     :: Tab t -> Keying k t a -> Index t k a
+  ixMeta     :: Tab t -> Key k t a -> Index k t a
 
   -- | Loop over each index
-  forMeta    :: Applicative h => Tab t -> (forall k a . Key k t a -> Index t k a -> h (Index t k a)) -> h (Tab t)
+  forMeta    :: Applicative h => Tab t -> (forall k a . Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
 
   -- | Find the primary key in a table
-  prim       :: IndexedLens' (Column t Primary (PKT t)) (Tab t) (Index t Primary (PKT t))
+  prim       :: IndexedLens' (Key Primary t (PKT t)) (Tab t) (Index Primary t (PKT t))
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments, etc.
   autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
@@ -107,103 +103,26 @@ autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Lens' (Tab t) a -> t -> Maybe 
 autoIncrement l t
   | t^.primaryKey == 0 = Just $ \ tbl -> tbl & l %%~ \ i -> let i' = i + 1 in i' `seq` (t & primaryKey .~ i' , i')
   | otherwise          = Nothing
+{-# INLINE autoIncrement #-}
 
-data Index t k a where
-  PrimaryIndex      :: Map a t -> Index t Primary a
-  CandidateIndex    :: Ord a => Map a t -> Index t (Secondary Unique) a
-  SupplementalIndex :: Ord a => Map a [t] -> Index t (Secondary NonUnique) a
-  OtherIndex        :: Index t Other a
+data Index k t a where
+  PrimaryIndex      :: Map a t            -> Index Primary               t a
+  CandidateIndex    :: Ord a => Map a t   -> Index (Secondary Unique)    t a
+  SupplementalIndex :: Ord a => Map a [t] -> Index (Secondary NonUnique) t a
+  OtherIndex        ::                       Index Other                 t a
 
-primaryMap :: Tabular t => Lens' (Index t Primary (PKT t)) (Map (PKT t) t)
+primaryMap :: Tabular t => Lens' (Index Primary t (PKT t)) (Map (PKT t) t)
 primaryMap f (PrimaryIndex m) = PrimaryIndex <$> f m
 {-# INLINE primaryMap #-}
 
--- * Lifting terms to types
-
-data Uniqueness u where
-  Unique :: Uniqueness Unique
-  NonUnique :: Uniqueness NonUnique
-data Unique
-data NonUnique
-
-class IsUniqueness (u :: *) where
-  uniq :: Fob (k u) (a -> f a) y -> Uniqueness u
-instance IsUniqueness Unique where
-  uniq _ = Unique
-  {-# INLINE uniq #-}
-instance IsUniqueness NonUnique where
-  uniq _ = NonUnique
-  {-# INLINE uniq #-}
-
-data ColumnType t a where
-  Primary   :: ColumnType Primary a
-  Secondary :: Ord a => Uniqueness u -> ColumnType (Secondary u) a
-  Other     :: ColumnType Other a
-data Primary (a :: *)
-data Secondary (u :: *) (a :: *)
-data Other (a :: *)
-
-class IsColumn u a where
-  columnType :: Fob u (a -> Mutator a) y -> ColumnType u a
-instance Ord a => IsColumn Primary a where
-  columnType _ = Primary
-  {-# INLINE columnType #-}
-instance (IsUniqueness u, Ord a) => IsColumn (Secondary u) a where
-  columnType t = Secondary (uniq t)
-  {-# INLINE columnType #-}
-instance IsColumn Other a where
-  columnType _ = Other
-  {-# INLINE columnType #-}
-
 -- * Overloaded keys
 
-type Key u t a = forall k f. (Keyed u k, Functor f) => k (a -> f a) (t -> f t)
-
-class Keyed u k where
-  key :: (Tabular t, Functor f) => Column t u a -> k (a -> f a) (t -> f t)
-  nokey :: (Functor f, u ~ Other) => Lens' t a -> k (a -> f a) (t -> f t)
-
-instance Keyed u (->) where
-  key     = val
-  nokey l = l
-
-type Keying u t a = Fob u (a -> Mutator a) (t -> Mutator t)
-
-type family CoF (x :: *) b :: *
-type instance CoF (x -> y) b = FunOf y b
-
-type family FunOf (x :: *) (b :: *) :: *
-type instance FunOf (f a) b = f b
-
-type family CoA (x :: *) :: *
-type instance CoA (x -> f_y) = x
-
-type family ArgOf (x :: *) :: *
-type instance ArgOf (f x) = x
-
-type family CoB (x :: *) :: *
-type instance CoB (x -> f_y) = ArgOf f_y
-
-data Fob u x y where
-  Fob :: (CoA x ~ CoB x, CoA y ~ CoB y) => Column (CoA y) u (CoA x) -> Fob u x y
-  NoFob :: (CoA x ~ CoB x, CoA y ~ CoB y) => (forall f. Functor f => (CoA x -> f (CoB x)) -> CoA y -> f (CoB y)) -> Fob Other x y
-
-instance u ~ v => Keyed u (Fob v) where
-  key   col = Fob col
-  nokey l = NoFob l
-
-fob :: Tabular t => Keying u t a -> Key u t a
-fob (Fob k)   = key k
-fob (NoFob l) = nokey l
-{-# INLINE fob #-}
-
--- * Helpers
-
 data Table t where
-  EmptyTable :: Table t
-  Table :: Tabular t => Tab t -> Table t
+  EmptyTable ::                       Table t
+  Table      :: Tabular t => Tab t -> Table t
   deriving Typeable
 
+-- | Using a virtual 'fromList' constructor
 instance (Tabular t, Data t) => Data (Table t) where
   gfoldl f z im = z fromList `f` toList im
   toConstr _ = fromListConstr
@@ -220,10 +139,13 @@ tableDataType :: DataType
 tableDataType = mkDataType "Data.Table.Table" [fromListConstr]
 
 instance Monoid (Table t) where
-  mempty               = EmptyTable
-  EmptyTable `mappend` r = r
-  r `mappend` EmptyTable = r
-  r@Table{} `mappend` s  = Foldable.foldl' (flip insert) r s
+  mempty = EmptyTable
+  {-# INLINE mempty #-}
+
+  EmptyTable `mappend` r          = r
+  r          `mappend` EmptyTable = r
+  r@Table{}  `mappend` s          = Foldable.foldl' (flip insert) r s
+  {-# INLINE mappend #-}
 
 instance Eq t => Eq (Table t) where
   (==) = (==) `on` toList
@@ -251,15 +173,15 @@ deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forMeta tab $ \k i -> Identity $ case i of
   PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . view primaryKey)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . view k)) idx ts
-  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (t^.k, [t]) | t <- ts ] $ \m ky ys ->
+  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . val k)) idx ts
+  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (val k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] Prelude.null %~ let pys = view primaryKey <$> ys in filter (\e -> e^.primaryKey `Prelude.notElem` pys)
   OtherIndex -> OtherIndex
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t
-emptyTab = tabulate $ \c -> case columnType c of
-  Primary             -> primarily c $ PrimaryIndex Map.empty
+emptyTab = tabulate $ \k -> case keyType k of
+  Primary             -> primarily k (PrimaryIndex Map.empty)
   Secondary Unique    -> CandidateIndex Map.empty
   Secondary NonUnique -> SupplementalIndex Map.empty
   Other               -> OtherIndex
@@ -280,10 +202,10 @@ null (Table m)  = Map.null (m^.prim.primaryMap)
 
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
-singleton row = Table $ tabulate $ \c -> case columnType c of
-  Primary             -> primarily c $ PrimaryIndex (Map.singleton (row^.primaryKey) row)
-  Secondary Unique    -> CandidateIndex (Map.singleton (row^.fob c) row)
-  Secondary NonUnique -> SupplementalIndex (Map.singleton (row^.fob c) [row])
+singleton row = Table $ tabulate $ \ k -> case keyType k of
+  Primary             -> primarily k $ PrimaryIndex $ Map.singleton (val k row) row
+  Secondary Unique    -> CandidateIndex             $ Map.singleton (val k row) row
+  Secondary NonUnique -> SupplementalIndex          $ Map.singleton (val k row) [row]
   Other               -> OtherIndex
 {-# INLINE singleton #-}
 
@@ -291,8 +213,8 @@ singleton row = Table $ tabulate $ \c -> case columnType c of
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
 collisions t (Table m)  = getConst $ forMeta m $ \k i -> Const $ case i of
-  PrimaryIndex idx   -> primarily k $ idx^..at (t^.k).traverse
-  CandidateIndex idx -> idx^..at (t^.k).traverse
+  PrimaryIndex idx   -> primarily k $ idx^..ix (val k t)
+  CandidateIndex idx ->               idx^..ix (val k t)
   _                  -> []
 {-# INLINE collisions #-}
 
@@ -301,7 +223,7 @@ delete :: t -> Table t -> Table t
 delete t m = deleteCollisions m (collisions t m)
 {-# INLINE delete #-}
 
-deleteWith :: (IsColumn u a, Ord a) => Keying u t a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
+deleteWith :: (IsKey u a, Ord a) => Key u t a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
 deleteWith ky cmp a tbl = tbl & with ky cmp a .~ empty
 {-# INLINE deleteWith #-}
 
@@ -318,9 +240,9 @@ insert t0 r0 = case autoKey t0 of
   go t r = case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forMeta m $ \k i -> Identity $ case i of
-      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (t^.primaryKey) ?~ t
-      CandidateIndex idx    -> CandidateIndex $ idx & at (t^.k) ?~ t
-      SupplementalIndex idx -> SupplementalIndex $ idx & at (t^.k) . anon [] Prelude.null %~ (t:)
+      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (val k t) ?~ t
+      CandidateIndex idx    -> CandidateIndex             $ idx & at (val k t) ?~ t
+      SupplementalIndex idx -> SupplementalIndex          $ idx & at (val k t) . anon [] Prelude.null %~ (t:)
       OtherIndex            -> OtherIndex
   {-# INLINE go #-}
 {-# INLINE insert #-}
@@ -339,14 +261,14 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
-with :: Ord a => Keying u t a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
+with :: Ord a => Key u t a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
 with _   _   _ f EmptyTable  = f EmptyTable
 with ky cmp a f r@(Table m)
     | lt && eq && gt = f r -- all rows
     | not lt && eq && not gt = case ixMeta m ky of
-      PrimaryIndex idx      -> go $ primarily ky (idx^..at a.traverse)
-      CandidateIndex idx    -> go $ idx^..at a.folded
-      SupplementalIndex idx -> go $ idx^..at a.folded.folded
+      PrimaryIndex idx      -> go $ primarily ky (idx^..ix a)
+      CandidateIndex idx    -> go $ idx^..ix a
+      SupplementalIndex idx -> go $ idx^..ix a.folded
       OtherIndex            -> getOther
     | lt || eq || gt = case ixMeta m ky of
       PrimaryIndex idx -> primarily ky $ case Map.splitLookup a idx of
@@ -368,11 +290,11 @@ with ky cmp a f r@(Table m)
         eq = cmp EQ EQ
         gt = cmp GT EQ
         go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
-        getOther = go $ m^..prim.primaryMap.folded.filtered (\row -> cmp (row^.fob ky) a)
+        getOther = go $ m^..prim.primaryMap.folded.filtered (\row -> cmp (val ky row) a)
 {-# INLINE with #-}
 
 -- | @'group' :: 'Key' u s a -> 'SimpleIndexedTraversal' a ('Table' s) ('Table' s)@
-group :: forall k f u s a. (Indexable a k, Applicative f, Ord a) => Keying u s a -> IndexedLensLike' k f (Table s) (Table s)
+group :: forall k f u s a. (Indexable a k, Applicative f, Ord a) => Key u s a -> IndexedLensLike' k f (Table s) (Table s)
 group ky f r = case r of
   EmptyTable -> pure EmptyTable
   Table m    -> case ixMeta m ky of
@@ -380,7 +302,7 @@ group ky f r = case r of
     CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
     OtherIndex
-      | idx <- Map.fromListWith (++) (m^..prim.primaryMap.folded.to(\v -> (v^.fob ky, [v])))
+      | idx <- Map.fromListWith (++) (m^..prim.primaryMap.folded.to(\v -> (val ky v, [v])))
       -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
 {-# INLINE group #-}
 
@@ -399,3 +321,41 @@ rows f r = Prelude.foldr insert empty <$> traverse f (toList r)
 fromList :: Tabular t => [t] -> Table t
 fromList = foldl' (flip insert) empty
 {-# INLINE fromList #-}
+
+-- * Lifting terms to types
+
+data Uniqueness u where
+  Unique :: Uniqueness Unique
+  NonUnique :: Uniqueness NonUnique
+data Unique
+data NonUnique
+
+class IsUniqueness (u :: *) where
+  uniq :: Key (k u) t a -> Uniqueness u
+instance IsUniqueness Unique where
+  uniq _ = Unique
+  {-# INLINE uniq #-}
+instance IsUniqueness NonUnique where
+  uniq _ = NonUnique
+  {-# INLINE uniq #-}
+
+data KeyType t a where
+  Primary   ::                          KeyType Primary a
+  Secondary :: Ord a => Uniqueness u -> KeyType (Secondary u) a
+  Other     ::                          KeyType Other a
+data Primary (a :: *)
+data Secondary (u :: *) (a :: *)
+data Other (a :: *)
+
+class IsKey u a where
+  keyType :: Key u t a -> KeyType u a
+instance Ord a => IsKey Primary a where
+  keyType _ = Primary
+  {-# INLINE keyType #-}
+instance (IsUniqueness u, Ord a) => IsKey (Secondary u) a where
+  keyType t = Secondary (uniq t)
+  {-# INLINE keyType #-}
+instance IsKey Other a where
+  keyType _ = Other
+  {-# INLINE keyType #-}
+
