@@ -92,20 +92,26 @@ class Ord (PKT t) => Tabular (t :: *) where
   ixMeta     :: Tab t -> Key k t a -> Index k t a
 
   -- | Loop over each index
-  forMeta    :: Applicative h => Tab t -> (forall k a . Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
+  forMeta    :: Applicative h => Tab t -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
 
   -- | Find the primary key in a table
-  prim       :: Lens' (Tab t) (Index Primary t (PKT t))
+  prim :: Lens' (Tab t) (Index Primary t (PKT t))
+  prim f t = f (ixMeta t primary) <&> \ u -> runIdentity $ forMeta t $ \k o -> Identity $ case o of
+    PrimaryIndex _ -> primarily k u
+    _              -> o
+  {-# INLINE prim #-}
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments, etc.
   autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
   autoKey _ = Nothing
+  {-# INLINE autoKey #-}
 
 -- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
 autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Loupe' t a -> t -> Maybe (Tab t -> (t, Tab t))
 autoIncrement pk t
   | t ^# pk == 0 = Just $ \ tb -> (t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax), tb)
   | otherwise    = Nothing
+{-# INLINE autoIncrement #-}
 
 data Index k t a where
   PrimaryIndex      :: Map a t            -> Index Primary      t a
