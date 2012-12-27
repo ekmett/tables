@@ -48,15 +48,12 @@ instance Tabular (Foo a) where
   key FooBaz = fooBaz
 
   primary = FooId
-
   primarily FooId r = r
 
-  tabulate f = FooTab (f FooId) (f FooBaz)
-
-  ixMeta (FooTab x _) FooId  = x
-  ixMeta (FooTab _ x) FooBaz = x
-
-  forMeta (FooTab x z) f = FooTab <$> f FooId x <*> f FooBaz z
+  mkTab f = FooTab (f FooId) (f FooBaz)
+  ixTab (FooTab x _) FooId  = x
+  ixTab (FooTab _ x) FooBaz = x
+  forTab (FooTab x z) f = FooTab <$> f FooId x <*> f FooBaz z
 
   autoKey = autoIncrement fooId_
 

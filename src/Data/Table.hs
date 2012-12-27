@@ -86,20 +86,20 @@ class Ord (PKT t) => Tabular (t :: *) where
   primarily  :: Key Primary t a -> ((a ~ PKT t) => r) -> r
 
   -- | Construct a table given a function from key to index.
-  tabulate   :: (forall k a. (IsKeyType k, Ord a) => Key k t a -> Index k t a) -> Tab t
+  mkTab   :: (forall k a. (IsKeyType k, Ord a) => Key k t a -> Index k t a) -> Tab t
 
   -- | Lookup an index
-  ixMeta     :: Tab t -> Key k t a -> Index k t a
+  ixTab     :: Tab t -> Key k t a -> Index k t a
 
   -- | Loop over each index
-  forMeta    :: Applicative h => Tab t -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
+  forTab    :: Applicative h => Tab t -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
 
-  -- | Find the primary key in a table
-  prim :: Lens' (Tab t) (Index Primary t (PKT t))
-  prim f t = f (ixMeta t primary) <&> \ u -> runIdentity $ forMeta t $ \k o -> Identity $ case o of
+  -- | Find the primary key index a tab
+  primTab :: Lens' (Tab t) (Index Primary t (PKT t))
+  primTab f t = f (ixTab t primary) <&> \ u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
     PrimaryIndex _ -> primarily k u
     _              -> o
-  {-# INLINE prim #-}
+  {-# INLINE primTab #-}
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments, etc.
   autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
@@ -107,7 +107,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   {-# INLINE autoKey #-}
 
 -- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
-autoIncrement :: (Tabular t, Num a, PKT t ~ a) => Loupe' t a -> t -> Maybe (Tab t -> (t, Tab t))
+autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t -> (t, Tab t))
 autoIncrement pk t
   | t ^# pk == 0 = Just $ \ tb -> (t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax), tb)
   | otherwise    = Nothing
@@ -118,8 +118,9 @@ data Index k t a where
   CandidateIndex    :: Ord a => Map a t   -> Index Candidate    t a
   SupplementalIndex :: Ord a => Map a [t] -> Index Supplemental t a
 
+-- | This lens updates the primary key in a table.
 primaryMap :: Tabular t => Lens' (Tab t) (Map (PKT t) t)
-primaryMap = prim . \ f (PrimaryIndex m) -> PrimaryIndex <$> f m
+primaryMap = primTab . \ f (PrimaryIndex m) -> PrimaryIndex <$> f m
 {-# INLINE primaryMap #-}
 
 -- * Overloaded keys
@@ -181,7 +182,7 @@ instance Foldable Table where
 
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
-deleteCollisions (Table tab) ts = Table $ runIdentity $ forMeta tab $ \k i -> Identity $ case i of
+deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
   PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . key primary)) idx ts
   CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . key k)) idx ts
   SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (key k t, [t]) | t <- ts ] $ \m ky ys ->
@@ -189,7 +190,7 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forMeta tab $ \k i -> Id
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t
-emptyTab = tabulate $ \k -> case keyType k of
+emptyTab = mkTab $ \k -> case keyType k of
   Primary      -> primarily k (PrimaryIndex Map.empty)
   Candidate    -> CandidateIndex Map.empty
   Supplemental -> SupplementalIndex Map.empty
@@ -210,7 +211,7 @@ null (Table m)  = Map.null (m^.primaryMap)
 
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
-singleton row = Table $ tabulate $ \ k -> case keyType k of
+singleton row = Table $ mkTab $ \ k -> case keyType k of
   Primary      -> primarily k $ PrimaryIndex $ Map.singleton (key k row) row
   Candidate    -> CandidateIndex             $ Map.singleton (key k row) row
   Supplemental -> SupplementalIndex          $ Map.singleton (key k row) [row]
@@ -219,13 +220,14 @@ singleton row = Table $ tabulate $ \ k -> case keyType k of
 -- | Return the set of rows that would be delete by deleting or inserting this row
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
-collisions t (Table m)  = getConst $ forMeta m $ \k i -> Const $ case i of
+collisions t (Table m)  = getConst $ forTab m $ \k i -> Const $ case i of
   PrimaryIndex idx   -> primarily k $ idx^..ix (key k t)
   CandidateIndex idx ->               idx^..ix (key k t)
   _                  -> []
 {-# INLINE collisions #-}
 
--- | Delete this row from the database
+-- | Delete this row from the database. This will remove any row that collides with the specified
+-- row on any primary or candidate key.
 delete :: t -> Table t -> Table t
 delete t m = deleteCollisions m (collisions t m)
 {-# INLINE delete #-}
@@ -242,7 +244,7 @@ insert t0 r0 = case autoKey t0 of
   where
   go t r = case delete t r of
     EmptyTable -> singleton t
-    Table m -> Table $ runIdentity $ forMeta m $ \k i -> Identity $ case i of
+    Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
       PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (key k t) ?~ t
       CandidateIndex idx    -> CandidateIndex             $ idx & at (key k t) ?~ t
       SupplementalIndex idx -> SupplementalIndex          $ idx & at (key k t) . anon [] Prelude.null %~ (t:)
@@ -283,11 +285,11 @@ instance (IsKeyType k, Tabular t) => With (Key k t) t where
   with _   _   _ f EmptyTable  = f EmptyTable
   with ky cmp a f r@(Table m)
     | lt && eq && gt = f r -- all rows
-    | not lt && eq && not gt = case ixMeta m ky of
+    | not lt && eq && not gt = case ixTab m ky of
       PrimaryIndex idx      -> go $ primarily ky (idx^..ix a)
       CandidateIndex idx    -> go $ idx^..ix a
       SupplementalIndex idx -> go $ idx^..ix a.folded
-    | lt || eq || gt = case ixMeta m ky of
+    | lt || eq || gt = case ixTab m ky of
       PrimaryIndex idx -> primarily ky $ case Map.splitLookup a idx of
         (l,e,g) -> go $ (if lt then Foldable.toList l else [])
                      ++ (if eq then Foldable.toList e else [])
@@ -328,7 +330,7 @@ instance Group ((->) t) t where
 -- | Group by an index
 instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
-  group ky f (Table m) = case ixMeta m ky of
+  group ky f (Table m) = case ixTab m ky of
     PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (key primary v) (singleton v)) <&> mconcat
     CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
