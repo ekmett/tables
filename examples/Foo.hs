@@ -39,7 +39,7 @@ instance Tabular (Foo a) where
   data Key k (Foo a) b where
     FooId  :: Key Primary   (Foo a) Int
     FooBaz :: Key Candidate (Foo a) Double
-  data Tab t (Foo a) = FooTab (t Primary (Foo a) Int) (t Candidate (Foo a) Double)
+  data Tab (Foo a) i = FooTab (i Primary Int) (i Candidate Double)
 
   key FooId  = fooId
   key FooBaz = fooBaz

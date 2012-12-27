@@ -68,10 +68,10 @@ import Prelude hiding (null)
 
 class Ord (PKT t) => Tabular (t :: *) where
   -- | The primary key type
-  type PKT t :: *
+  type PKT t
 
   -- | Used to store indices
-  data Tab (l :: * -> * -> * -> *) t :: *
+  data Tab t m
 
   -- | The type used internally for columns
   data Key (k :: *) t :: * -> *
@@ -86,16 +86,16 @@ class Ord (PKT t) => Tabular (t :: *) where
   primarily :: Key Primary t a -> ((a ~ PKT t) => r) -> r
 
   -- | Construct a Tab given a function from key to index.
-  mkTab :: Applicative h => (forall k a. (IsKeyType k, Ord a) => Key k t a -> h (l k t a)) -> h (Tab l t)
+  mkTab :: Applicative h => (forall k a. (IsKeyType k, Ord a) => Key k t a -> h (i k a)) -> h (Tab t i)
 
   -- | Lookup an index in a Tab
-  ixTab :: Tab l t -> Key k t a -> l k t a
+  ixTab :: Tab t i -> Key k t a -> i k a
 
   -- | Loop over each index
-  forTab :: Applicative h => Tab l t -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> l k t a -> h (m k t a)) -> h (Tab m t)
+  forTab :: Applicative h => Tab t i -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> i k a -> h (j k a)) -> h (Tab t j)
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments.
-  autoKey    :: t -> Maybe (Tab Index t -> t)
+  autoKey    :: t -> Maybe (Tab t (Index t) -> t)
   autoKey _ = Nothing
   {-# INLINE autoKey #-}
 
@@ -107,19 +107,19 @@ class Ord (PKT t) => Tabular (t :: *) where
 -- To enable auto-increment for a table with primary key @primaryKeyField@, set:
 --
 -- @'autoKey' = 'autoIncrement' primaryKeyField@
-autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab Index t -> t)
+autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t (Index t) -> t)
 autoIncrement pk t
   | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb ^? primaryMap.indicesOf traverseMax)
   | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
 
-data Index k t a where
-  PrimaryIndex      :: Map a t            -> Index Primary      t a
-  CandidateIndex    :: Ord a => Map a t   -> Index Candidate    t a
-  SupplementalIndex :: Ord a => Map a [t] -> Index Supplemental t a
+data Index t k a where
+  PrimaryIndex      :: Map a t            -> Index t Primary      a
+  CandidateIndex    :: Ord a => Map a t   -> Index t Candidate    a
+  SupplementalIndex :: Ord a => Map a [t] -> Index t Supplemental a
 
 -- | Find the primary key index a tab
-primaryMap :: Tabular t => Lens' (Tab Index t) (Map (PKT t) t)
+primaryMap :: Tabular t => Lens' (Tab t (Index t)) (Map (PKT t) t)
 primaryMap f t = case ixTab t primary of
   PrimaryIndex m -> f m <&> \u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
     PrimaryIndex _ -> primarily k (PrimaryIndex u)
@@ -133,8 +133,8 @@ primaryMap f t = case ixTab t primary of
 ------------------------------------------------------------------------------
 
 data Table t where
-  EmptyTable ::                             Table t
-  Table      :: Tabular t => Tab Index t -> Table t
+  EmptyTable ::                                 Table t
+  Table      :: Tabular t => Tab t (Index t) -> Table t
   deriving Typeable
 
 instance (Tabular t, Data t) => Data (Table t) where
@@ -192,7 +192,7 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
     m & at ky . anon [] Prelude.null %~ let pys = key primary <$> ys in filter (\e -> key primary e `Prelude.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
-emptyTab :: Tabular t => Tab Index t
+emptyTab :: Tabular t => Tab t (Index t)
 emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
   Primary      -> primarily k (PrimaryIndex Map.empty)
   Candidate    -> CandidateIndex Map.empty
