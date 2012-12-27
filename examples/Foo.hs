@@ -41,8 +41,8 @@ instance Tabular (Foo a) where
     FooBaz :: Key Candidate (Foo a) Double
   data Tab (Foo a) i = FooTab (i Primary Int) (i Candidate Double)
 
-  key FooId  = fooId
-  key FooBaz = fooBaz
+  index FooId  = fooId
+  index FooBaz = fooBaz
 
   primary = FooId
   primarily FooId r = r

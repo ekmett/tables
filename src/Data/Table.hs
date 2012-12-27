@@ -51,8 +51,8 @@ module Data.Table
   -- * Esoterica
   , Auto(..)
   , autoKey
-  , autoValue
   , auto
+  , Value(..)
   , autoIncrement
   -- * Implementation Details
   , IsKeyType(..)
@@ -91,7 +91,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   data Key (k :: *) t :: * -> *
 
   -- | Extract the value of a 'Key'
-  key :: Key k t a -> t -> a
+  index :: Key k t a -> t -> a
 
   -- | Every 'Table' has one 'Primary' 'Key'
   primary :: Key Primary t (PKT t)
@@ -203,10 +203,10 @@ instance Foldable Table where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . key primary)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . key k)) idx ts
-  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (key k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon [] Prelude.null %~ let pys = key primary <$> ys in filter (\e -> key primary e `Prelude.notElem` pys)
+  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . index primary)) idx ts
+  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . index k)) idx ts
+  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (index k t, [t]) | t <- ts ] $ \m ky ys ->
+    m & at ky . anon [] Prelude.null %~ let pys = index primary <$> ys in filter (\e -> index primary e `Prelude.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (Index t)
@@ -232,17 +232,17 @@ null (Table m)  = Map.null (m^.primaryMap)
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
 singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k of
-  Primary      -> primarily k $ PrimaryIndex $ Map.singleton (key k row) row
-  Candidate    -> CandidateIndex             $ Map.singleton (key k row) row
-  Supplemental -> SupplementalIndex          $ Map.singleton (key k row) [row]
+  Primary      -> primarily k $ PrimaryIndex $ Map.singleton (index k row) row
+  Candidate    -> CandidateIndex             $ Map.singleton (index k row) row
+  Supplemental -> SupplementalIndex          $ Map.singleton (index k row) [row]
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
 collisions t (Table m)  = getConst $ forTab m $ \k i -> Const $ case i of
-  PrimaryIndex idx   -> primarily k $ idx^..ix (key k t)
-  CandidateIndex idx ->               idx^..ix (key k t)
+  PrimaryIndex idx   -> primarily k $ idx^..ix (index k t)
+  CandidateIndex idx ->               idx^..ix (index k t)
   _                  -> []
 {-# INLINE collisions #-}
 
@@ -263,9 +263,9 @@ insert t0 r = case autoTab t0 of
   go t = case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
-      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (key k t) ?~ t
-      CandidateIndex idx    -> CandidateIndex             $ idx & at (key k t) ?~ t
-      SupplementalIndex idx -> SupplementalIndex          $ idx & at (key k t) . anon [] Prelude.null %~ (t:)
+      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (index k t) ?~ t
+      CandidateIndex idx    -> CandidateIndex             $ idx & at (index k t) ?~ t
+      SupplementalIndex idx -> SupplementalIndex          $ idx & at (index k t) . anon [] Prelude.null %~ (t:)
   {-# INLINE go #-}
 {-# INLINE insert #-}
 
@@ -350,7 +350,7 @@ instance Group ((->) t) t where
 instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixTab m ky of
-    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (key primary v) (singleton v)) <&> mconcat
+    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (index primary v) (singleton v)) <&> mconcat
     CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
   {-# INLINE group #-}
@@ -399,6 +399,9 @@ instance IsKeyType Supplemental where
   keyType _ = Supplemental
   {-# INLINE keyType #-}
 
+class HasValue p q f s t a b | s -> a, t -> b, s b -> t, t a -> s where
+  value :: Overloading p q f s t a b
+
 ------------------------------------------------------------------------------
 -- A simple table with an auto-incremented key
 ------------------------------------------------------------------------------
@@ -413,8 +416,8 @@ data Auto a = Auto !Int a
 autoKey :: Lens' (Auto a) Int
 autoKey f (Auto k a) = f k <&> \k' -> Auto k' a
 
-autoValue :: IndexedLens Int (Auto a) (Auto b) a b
-autoValue f (Auto k a) = indexed f k a <&> Auto k
+instance (Indexable Int p, q ~ (->), Functor f) => HasValue p q f (Auto a) (Auto b) a b where
+  value f (Auto k a) = indexed f k a <&> Auto k
 
 instance FunctorWithIndex Int Auto where
   imap f (Auto k a) = Auto k (f k a)
@@ -434,7 +437,7 @@ instance Tabular (Auto a) where
   data Tab (Auto a) i = AutoTab (i Primary Int)
   data Key p (Auto a) b where
     AutoKey :: Key Primary (Auto a) Int
-  key AutoKey (Auto k _) = k
+  index AutoKey (Auto k _) = k
   primary = AutoKey
   primarily AutoKey r = r
   mkTab f = AutoTab <$> f AutoKey
@@ -443,17 +446,58 @@ instance Tabular (Auto a) where
   autoTab = autoIncrement autoKey
 
 ------------------------------------------------------------------------------
--- A simple key-value pair
+-- A simple key-value pair, indexed on the key
 ------------------------------------------------------------------------------
 
+instance (Indexable k p, q ~ (->), Functor f) => HasValue p q f (k, a) (k, b) a b where
+  value f (k, a) = indexed f k a <&> (,) k
+
+-- | Simple (key, value) pairs
 instance Ord k => Tabular (k,v) where
   type PKT (k,v) = k
   data Tab (k,v) i = KVTab (i Primary k)
   data Key p (k,v) b where
     Fst :: Key Primary (k,v) k
-  key Fst = fst
+  index Fst = fst
   primary = Fst
   primarily Fst r = r
   mkTab f = KVTab <$> f Fst
   ixTab (KVTab x) Fst = x
   forTab (KVTab x) f = KVTab <$> f Fst x
+
+------------------------------------------------------------------------------
+-- A simple value for set-like tables.
+------------------------------------------------------------------------------
+
+data Value a = Value a
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
+
+instance Applicative Value where
+  pure = Value
+  Value f <*> Value a = Value (f a)
+
+instance Monad Value where
+  return = Value
+  Value a >>= f = f a
+
+instance Comonad Value where
+  extract (Value a) = a
+  extend f w@(Value _) = Value (f w)
+
+instance ComonadApply Value where
+  Value f <@> Value a = Value (f a)
+
+instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
+  value = iso (\(Value a) -> a) Value
+
+instance Ord a => Tabular (Value a) where
+  type PKT (Value a) = a
+  data Tab (Value a) i = ValueTab (i Primary a)
+  data Key p (Value a) b where
+    Val :: Key Primary (Value a) a
+  index Val = extract
+  primary = Val
+  primarily Val r = r
+  mkTab f = ValueTab <$> f Val
+  ixTab (ValueTab x) Val = x
+  forTab (ValueTab x) f = ValueTab <$> f Val x
