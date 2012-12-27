@@ -44,10 +44,8 @@ module Data.Table
   , autoIncrement
   -- * Implementation Details
   , Tabular(..)
-  , KeyType(..)
-  , Primary
-  , Candidate
-  , Supplemental
+  , IsKeyType(..)
+  , KeyType(..), Primary, Candidate, Supplemental
   , Index(..)
   ) where
 
@@ -279,7 +277,7 @@ instance With ((->) t) t where
       gt = cmp GT EQ
       go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
 
-instance (IsKeyType k, Tabular t) => With (Key k t) t where
+instance With (Key k t) t where
   with _   _   _ f EmptyTable  = f EmptyTable
   with ky cmp a f r@(Table m)
     | lt && eq && gt = f r -- all rows
