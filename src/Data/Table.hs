@@ -41,6 +41,7 @@ module Data.Table
   , fromList
   -- ** Reading and Writing
   , null
+  , count
   , With(..)
   , insert
   , delete
@@ -267,6 +268,11 @@ insert t0 r = case autoTab t0 of
       SupplementalIndex idx -> SupplementalIndex          $ idx & at (index k t) . anon [] Prelude.null %~ (t:)
   {-# INLINE go #-}
 {-# INLINE insert #-}
+
+-- | Retrieve a row count.
+count :: Table t -> Int
+count EmptyTable = 0
+count (Table m)  = M.size (m^.primaryMap)
 
 -- | Convert a list to and from a 'Table'.
 --
