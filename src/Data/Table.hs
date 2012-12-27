@@ -6,7 +6,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE EmptyDataDecls #-}
@@ -76,7 +75,6 @@ import Data.Monoid
 import Data.Traversable
 import qualified Prelude
 import Prelude hiding (null)
-import Text.Read
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
 {-# ANN module "HLint: ignore Eta reduce" #-}
@@ -409,19 +407,14 @@ instance IsKeyType Supplemental where
 auto :: a -> Auto a
 auto = Auto 0
 
-data Auto a = Auto { _autoKey :: !Int, _autoValue :: a }
-  deriving (Eq,Ord,Functor,Foldable,Traversable,Data,Typeable)
+data Auto a = Auto !Int a
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
 
-makeLenses ''Auto
+autoKey :: Lens' (Auto a) Int
+autoKey f (Auto k a) = f k <&> \k' -> Auto k' a
 
-instance Show a => Show (Auto a) where
-  showsPrec d (Auto k a) = showParen (d > 10) $ 
-    showString "Auto " . showsPrec 11 k . showChar ' ' . showsPrec 11 a
-
-instance Read a => Read (Auto a) where
-  readPrec = parens $ prec 10 $ do
-    Ident "Auto" <- lexP
-    Auto `liftM` step readPrec `ap` step readPrec
+autoValue :: IndexedLens Int (Auto a) (Auto b) a b
+autoValue f (Auto k a) = indexed f k a <&> Auto k
 
 instance FunctorWithIndex Int Auto where
   imap f (Auto k a) = Auto k (f k a)
@@ -441,7 +434,7 @@ instance Tabular (Auto a) where
   data Tab (Auto a) i = AutoTab (i Primary Int)
   data Key p (Auto a) b where
     AutoKey :: Key Primary (Auto a) Int
-  key AutoKey = _autoKey
+  key AutoKey (Auto k _) = k
   primary = AutoKey
   primarily AutoKey r = r
   mkTab f = AutoTab <$> f AutoKey
