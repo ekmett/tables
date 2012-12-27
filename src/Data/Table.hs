@@ -10,7 +10,6 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Table
@@ -113,6 +112,7 @@ autoIncrement pk t
   | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
 
+-- | This is used to store a single index.
 data Index t k a where
   PrimaryIndex      :: Map a t            -> Index t Primary      a
   CandidateIndex    :: Ord a => Map a t   -> Index t Candidate    a
