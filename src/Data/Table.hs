@@ -20,6 +20,8 @@
 -- Stability   :  experimental
 -- Portability :  non-portable
 --
+-- This module provides tables with multiple indices that support a simple
+-- API based on the lenses and traversals from the @lens@ package.
 ----------------------------------------------------------------------------
 module Data.Table
   (
@@ -132,6 +134,8 @@ primaryMap f t = case ixTab t primary of
 -- Table
 ------------------------------------------------------------------------------
 
+-- | Every 'Table' has a 'Primary' 'key' and may have 'Candidate' or
+-- 'Supplemental' keys.
 data Table t where
   EmptyTable ::                                 Table t
   Table      :: Tabular t => Tab t (Index t) -> Table t
@@ -338,18 +342,18 @@ instance Group (Key k t) t where
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
   {-# INLINE group #-}
 
--- * Traverse all of the rows in a table without changing any types
+-- | Traverse all of the rows in a table without changing any types
 rows' :: Traversal' (Table t) t
 rows' _ EmptyTable = pure EmptyTable
 rows' f r@Table{} = Prelude.foldr insert empty <$> traverse f (toList r)
 {-# INLINE rows' #-}
 
--- * Traverse all of the rows in a table, potentially changing table types completely.
+-- | Traverse all of the rows in a table, potentially changing table types completely.
 rows :: Tabular t => Traversal (Table s) (Table t) s t
 rows f r = Prelude.foldr insert empty <$> traverse f (toList r)
 {-# INLINE rows #-}
 
--- * Build up a table from a list
+-- | Build up a table from a list
 fromList :: Tabular t => [t] -> Table t
 fromList = foldl' (flip insert) empty
 {-# INLINE fromList #-}
