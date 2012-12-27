@@ -101,15 +101,15 @@ class Ord (PKT t) => Tabular (t :: *) where
     _              -> o
   {-# INLINE primTab #-}
 
-  -- | Adjust a record using meta-information about the table allowing for auto-increments, etc.
-  autoKey    :: t -> Maybe (Tab t -> (t, Tab t))
+  -- | Adjust a record using meta-information about the table allowing for auto-increments.
+  autoKey    :: t -> Maybe (Tab t -> t)
   autoKey _ = Nothing
   {-# INLINE autoKey #-}
 
 -- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
-autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t -> (t, Tab t))
+autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t -> t)
 autoIncrement pk t
-  | t ^# pk == 0 = Just $ \ tb -> (t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax), tb)
+  | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax)
   | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
 
@@ -234,15 +234,13 @@ delete t m = deleteCollisions m (collisions t m)
 
 -- | Insert a row into a relation, removing collisions.
 insert :: Tabular t => t -> Table t -> Table t
-insert t0 r0 = case autoKey t0 of
-  Just p -> case r0 of
-    EmptyTable -> case p emptyTab of
-      (t1,m1) -> go t1 (Table m1)
-    Table m    -> case p m of
-      (t1,m1) -> go t1 (Table m1)
-  Nothing -> go t0 r0
+insert t0 r = case autoKey t0 of
+  Just p -> case r of
+    EmptyTable -> go (p emptyTab)
+    Table m    -> go (p m)
+  Nothing -> go t0
   where
-  go t r = case delete t r of
+  go t = case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
       PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (key k t) ?~ t
