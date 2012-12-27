@@ -1,15 +1,20 @@
-{-# LANGUAGE GADTs #-}
-{-# LANGUAGE RankNTypes #-}
-{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE LiberalTypeSynonyms #-}
+{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE EmptyDataDecls #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveDataTypeable #-}
-{-# LANGUAGE LiberalTypeSynonyms #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE GADTs #-}
+{-# OPTIONS_GHC -fno-warn-name-shadowing #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Table
@@ -27,6 +32,9 @@ module Data.Table
   (
   -- * Tables
     Table(..)
+  , Tabular(..)
+  , Tab(..)
+  , Key(..)
   -- ** Table Construction
   , empty
   , singleton
@@ -42,16 +50,21 @@ module Data.Table
   , rows
   , rows'
   -- * Esoterica
+  , Auto(..)
+  , autoKey
+  , autoValue
+  , auto
   , autoIncrement
   -- * Implementation Details
-  , Tabular(..)
   , IsKeyType(..)
   , KeyType(..), Primary, Candidate, Supplemental
   , Index(..)
   ) where
 
 import Control.Applicative hiding (empty)
+import Control.Comonad
 import Control.Lens
+import Control.Monad
 import Data.Data
 import Data.Foldable as Foldable
 import Data.Function (on)
@@ -63,10 +76,12 @@ import Data.Monoid
 import Data.Traversable
 import qualified Prelude
 import Prelude hiding (null)
+import Text.Read
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
 {-# ANN module "HLint: ignore Eta reduce" #-}
 
+-- | This class describes how to index a user-defined data type.
 class Ord (PKT t) => Tabular (t :: *) where
   -- | The primary key type
   type PKT t
@@ -77,28 +92,28 @@ class Ord (PKT t) => Tabular (t :: *) where
   -- | The type used internally for columns
   data Key (k :: *) t :: * -> *
 
-  -- | evaluate an internal column
-  key     :: Key k t a -> t -> a
+  -- | Extract the value of a 'Key'
+  key :: Key k t a -> t -> a
 
-  -- | Every relation has one primary key
+  -- | Every 'Table' has one 'Primary' 'Key'
   primary :: Key Primary t (PKT t)
 
   -- | ... and so if you find one, it had better be that one!
   primarily :: Key Primary t a -> ((a ~ PKT t) => r) -> r
 
-  -- | Construct a Tab given a function from key to index.
+  -- | Construct a 'Tab' given a function from key to index.
   mkTab :: Applicative h => (forall k a. (IsKeyType k, Ord a) => Key k t a -> h (i k a)) -> h (Tab t i)
 
-  -- | Lookup an index in a Tab
+  -- | Lookup an index in a 'Tab'
   ixTab :: Tab t i -> Key k t a -> i k a
 
-  -- | Loop over each index
+  -- | Loop over each index in a 'Tab'
   forTab :: Applicative h => Tab t i -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> i k a -> h (j k a)) -> h (Tab t j)
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments.
-  autoKey    :: t -> Maybe (Tab t (Index t) -> t)
-  autoKey _ = Nothing
-  {-# INLINE autoKey #-}
+  autoTab :: t -> Maybe (Tab t (Index t) -> t)
+  autoTab _ = Nothing
+  {-# INLINE autoTab #-}
 
 -- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
 --
@@ -241,7 +256,7 @@ delete t m = deleteCollisions m (collisions t m)
 
 -- | Insert a row into a relation, removing collisions.
 insert :: Tabular t => t -> Table t -> Table t
-insert t0 r = case autoKey t0 of
+insert t0 r = case autoTab t0 of
   Just p -> case r of
     EmptyTable -> go (p emptyTab)
     Table m    -> go (p m)
@@ -385,3 +400,67 @@ instance IsKeyType Candidate where
 instance IsKeyType Supplemental where
   keyType _ = Supplemental
   {-# INLINE keyType #-}
+
+------------------------------------------------------------------------------
+-- A simple table with an auto-incremented key
+------------------------------------------------------------------------------
+
+-- | Generate a row with an auto-incremented key
+auto :: a -> Auto a
+auto = Auto 0
+
+data Auto a = Auto { _autoKey :: !Int, _autoValue :: a }
+  deriving (Eq,Ord,Functor,Foldable,Traversable,Data,Typeable)
+
+makeLenses ''Auto
+
+instance Show a => Show (Auto a) where
+  showsPrec d (Auto k a) = showParen (d > 10) $ 
+    showString "Auto " . showsPrec 11 k . showChar ' ' . showsPrec 11 a
+
+instance Read a => Read (Auto a) where
+  readPrec = parens $ prec 10 $ do
+    Ident "Auto" <- lexP
+    Auto `liftM` step readPrec `ap` step readPrec
+
+instance FunctorWithIndex Int Auto where
+  imap f (Auto k a) = Auto k (f k a)
+
+instance FoldableWithIndex Int Auto where
+  ifoldMap f (Auto k a) = f k a
+
+instance TraversableWithIndex Int Auto where
+  itraverse f (Auto k a) = Auto k <$> f k a
+
+instance Comonad Auto where
+  extract (Auto _ a) = a
+  extend f w@(Auto k _) = Auto k (f w)
+
+instance Tabular (Auto a) where
+  type PKT (Auto a) = Int
+  data Tab (Auto a) i = AutoTab (i Primary Int)
+  data Key p (Auto a) b where
+    AutoKey :: Key Primary (Auto a) Int
+  key AutoKey = _autoKey
+  primary = AutoKey
+  primarily AutoKey r = r
+  mkTab f = AutoTab <$> f AutoKey
+  ixTab (AutoTab x) AutoKey = x
+  forTab (AutoTab x) f = AutoTab <$> f AutoKey x
+  autoTab = autoIncrement autoKey
+
+------------------------------------------------------------------------------
+-- A simple key-value pair
+------------------------------------------------------------------------------
+
+instance Ord k => Tabular (k,v) where
+  type PKT (k,v) = k
+  data Tab (k,v) i = KVTab (i Primary k)
+  data Key p (k,v) b where
+    Fst :: Key Primary (k,v) k
+  key Fst = fst
+  primary = Fst
+  primarily Fst r = r
+  mkTab f = KVTab <$> f Fst
+  ixTab (KVTab x) Fst = x
+  forTab (KVTab x) f = KVTab <$> f Fst x
