@@ -64,6 +64,7 @@ import Control.Applicative hiding (empty)
 import Control.Comonad
 import Control.Lens
 import Control.Monad
+import Control.Monad.Fix
 import Data.Data
 import Data.Foldable as F
 import Data.Function (on)
@@ -485,6 +486,9 @@ instance Field1 (Value a) (Value b) a b where
 instance Functor f => Each Int f (Value a) (Value b) a b where
   each f (Value a) = Value <$> indexed f (0 :: Int) a
 
+instance Wrapped a b (Value a) (Value b) where
+  wrapped = iso Value $ \(Value a) -> a
+
 data Value a = Value a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
 
@@ -496,6 +500,9 @@ instance Monad Value where
   return = Value
   Value a >>= f = f a
 
+instance MonadFix Value where
+  mfix f = let m = f (extract m) in m
+
 instance Comonad Value where
   extract (Value a) = a
   extend f w@(Value _) = Value (f w)
@@ -504,7 +511,7 @@ instance ComonadApply Value where
   Value f <@> Value a = Value (f a)
 
 instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
-  value = iso (\(Value a) -> a) Value
+  value = unwrapped
 
 instance Ord a => Tabular (Value a) where
   type PKT (Value a) = a
