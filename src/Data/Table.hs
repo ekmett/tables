@@ -65,11 +65,11 @@ import Control.Comonad
 import Control.Lens
 import Control.Monad
 import Data.Data
-import Data.Foldable as Foldable
+import Data.Foldable as F
 import Data.Function (on)
 import Data.Functor.Identity
 import Data.Map (Map)
-import qualified Data.Map as Map
+import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
 import Data.Traversable
@@ -129,7 +129,7 @@ autoIncrement pk t
 
 -- | This is used to store a single index.
 data Index t k a where
-  PrimaryIndex      :: Map a t            -> Index t Primary      a
+  PrimaryIndex      :: Map (PKT t) t      -> Index t Primary      a
   CandidateIndex    :: Ord a => Map a t   -> Index t Candidate    a
   SupplementalIndex :: Ord a => Map a [t] -> Index t Supplemental a
 
@@ -175,7 +175,7 @@ instance Monoid (Table t) where
 
   EmptyTable `mappend` r          = r
   r          `mappend` EmptyTable = r
-  r@Table{}  `mappend` s          = Foldable.foldl' (flip insert) r s
+  r@Table{}  `mappend` s          = F.foldl' (flip insert) r s
   {-# INLINE mappend #-}
 
 instance Eq t => Eq (Table t) where
@@ -203,17 +203,17 @@ instance Foldable Table where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (Map.delete . index primary)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (Map.delete . index k)) idx ts
-  SupplementalIndex idx -> SupplementalIndex $ Map.foldlWithKey' ?? idx ?? Map.fromListWith (++) [ (index k t, [t]) | t <- ts ] $ \m ky ys ->
+  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (M.delete . index primary)) idx ts
+  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (M.delete . index k)) idx ts
+  SupplementalIndex idx -> SupplementalIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (index k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] Prelude.null %~ let pys = index primary <$> ys in filter (\e -> index primary e `Prelude.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (Index t)
 emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
-  Primary      -> primarily k (PrimaryIndex Map.empty)
-  Candidate    -> CandidateIndex Map.empty
-  Supplemental -> SupplementalIndex Map.empty
+  Primary      -> primarily k (PrimaryIndex M.empty)
+  Candidate    -> CandidateIndex M.empty
+  Supplemental -> SupplementalIndex M.empty
 {-# INLINE emptyTab #-}
 
 -- * Public API
@@ -226,15 +226,15 @@ empty = EmptyTable
 -- | Check to see if the relation is empty
 null :: Table t -> Bool
 null EmptyTable = True
-null (Table m)  = Map.null (m^.primaryMap)
+null (Table m)  = M.null (m^.primaryMap)
 {-# INLINE null #-}
 
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
 singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k of
-  Primary      -> primarily k $ PrimaryIndex $ Map.singleton (index k row) row
-  Candidate    -> CandidateIndex             $ Map.singleton (index k row) row
-  Supplemental -> SupplementalIndex          $ Map.singleton (index k row) [row]
+  Primary      -> primarily k $ PrimaryIndex $ M.singleton (index k row) row
+  Candidate    -> CandidateIndex             $ M.singleton (index k row) row
+  Supplemental -> SupplementalIndex          $ M.singleton (index k row) [row]
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
@@ -308,18 +308,18 @@ instance With (Key k t) t where
       CandidateIndex idx    -> go $ idx^..ix a
       SupplementalIndex idx -> go $ idx^..ix a.folded
     | lt || eq || gt = case ixTab m ky of
-      PrimaryIndex idx -> primarily ky $ case Map.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then Foldable.toList l else [])
-                     ++ (if eq then Foldable.toList e else [])
-                     ++ (if gt then Foldable.toList g else [])
-      CandidateIndex idx -> case Map.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then Foldable.toList l else [])
-                     ++ (if eq then Foldable.toList e else [])
-                     ++ (if gt then Foldable.toList g else [])
-      SupplementalIndex idx -> case Map.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then Foldable.concat l else [])
-                     ++ (if eq then Foldable.concat e else [])
-                     ++ (if gt then Foldable.concat g else [])
+      PrimaryIndex idx -> primarily ky $ case M.splitLookup a idx of
+        (l,e,g) -> go $ (if lt then F.toList l else [])
+                     ++ (if eq then F.toList e else [])
+                     ++ (if gt then F.toList g else [])
+      CandidateIndex idx -> case M.splitLookup a idx of
+        (l,e,g) -> go $ (if lt then F.toList l else [])
+                     ++ (if eq then F.toList e else [])
+                     ++ (if gt then F.toList g else [])
+      SupplementalIndex idx -> case M.splitLookup a idx of
+        (l,e,g) -> go $ (if lt then F.concat l else [])
+                     ++ (if eq then F.concat e else [])
+                     ++ (if gt then F.concat g else [])
     | otherwise      = f EmptyTable <&> mappend r -- no match
     where
         lt = cmp LT EQ
@@ -342,8 +342,8 @@ class Group q t | q -> t where
 -- | Group by an arbitrary function
 instance Group ((->) t) t where
   group _ _ EmptyTable = pure EmptyTable
-  group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat where 
-    idx = Map.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
+  group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat where 
+    idx = M.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
   {-# INLINE group #-}
 
 -- | Group by a key
@@ -351,8 +351,8 @@ instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixTab m ky of
     PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (index primary v) (singleton v)) <&> mconcat
-    CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (Map.toList idx) <&> mconcat
-    SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (Map.toList idx) <&> mconcat
+    CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (M.toList idx) <&> mconcat
+    SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
   {-# INLINE group #-}
 
 -- | Traverse all of the rows in a table without changing any types
