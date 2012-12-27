@@ -105,6 +105,13 @@ class Ord (PKT t) => Tabular (t :: *) where
   {-# INLINE autoKey #-}
 
 -- | This lets you define 'autoKey' to increment to 1 greater than the existing maximum key in a table.
+--
+-- In order to support this you need a numeric primary key, and the ability to update the primary key in a record, indicated by a
+-- lens to the field.
+--
+-- To enable auto-increment for a table with primary key @primaryKeyField@, set:
+--
+-- @'autoKey' = 'autoIncrement' primaryKeyField@
 autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t -> t)
 autoIncrement pk t
   | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax)
@@ -313,6 +320,7 @@ deleteWith :: (With q t, Ord a) => q a -> (forall x. Ord x => x -> x -> Bool) ->
 deleteWith p cmp a t = set (with p cmp a) empty t
 {-# INLINE deleteWith #-}
 
+-- | Group by a given key or arbitrary function.
 class Group q t | q -> t where
   group :: (Indexable a p, Applicative f, Ord a) => q a -> IndexedLensLike' p f (Table t) (Table t)
 
@@ -323,7 +331,7 @@ instance Group ((->) t) t where
     idx = Map.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
   {-# INLINE group #-}
 
--- | Group by an index
+-- | Group by a key
 instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixTab m ky of
@@ -350,11 +358,13 @@ fromList = foldl' (flip insert) empty
 
 -- * Lifting terms to types
 
+-- | Value-level key types
 data KeyType t where
   Primary      :: KeyType Primary
   Candidate    :: KeyType Candidate
   Supplemental :: KeyType Supplemental
 
+-- |  Type level key types
 data Primary
 data Candidate
 data Supplemental
