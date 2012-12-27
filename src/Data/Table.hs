@@ -41,11 +41,9 @@ module Data.Table
   , fromList
   -- ** Reading and Writing
   , null
-  , insert
   , With(..)
-  , Group(..)
+  , insert
   , delete
-  , deleteWith
   , rows
   , rows'
   -- * Esoterica
@@ -284,9 +282,19 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
--- | Select a smaller, updateable subset of the rows of a table using an index or an arbitrary function.
 class With q t | q -> t where
+  -- | Select a smaller, updateable subset of the rows of a table using an index or an arbitrary function.
   with :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
+
+  -- | Group by a given key or arbitrary function.
+  group :: (Indexable a p, Applicative f, Ord a) => q a -> IndexedLensLike' p f (Table t) (Table t)
+
+  -- | Delete selected rows from a table
+  --
+  -- @'deleteWith' p cmp a t ≡ 'set' ('with' p cmp a) 'empty' t@
+  deleteWith :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
+  deleteWith p cmp a t = set (with p cmp a) empty t
+  {-# INLINE deleteWith #-}
 
 instance With ((->) t) t where
   with _  _   _ f EmptyTable  = f EmptyTable
@@ -299,6 +307,11 @@ instance With ((->) t) t where
       eq = cmp EQ EQ
       gt = cmp GT EQ
       go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+
+  group _ _ EmptyTable = pure EmptyTable
+  group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat where 
+    idx = M.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
+  {-# INLINE group #-}
 
 instance With (Key k t) t where
   with _   _   _ f EmptyTable  = f EmptyTable
@@ -329,26 +342,6 @@ instance With (Key k t) t where
         go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
--- | Delete selected rows from a table
---
--- @'deleteWith' p cmp a t ≡ 'set' ('with' p cmp a) 'empty' t@
-deleteWith :: (With q t, Ord a) => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
-deleteWith p cmp a t = set (with p cmp a) empty t
-{-# INLINE deleteWith #-}
-
--- | Group by a given key or arbitrary function.
-class Group q t | q -> t where
-  group :: (Indexable a p, Applicative f, Ord a) => q a -> IndexedLensLike' p f (Table t) (Table t)
-
--- | Group by an arbitrary function
-instance Group ((->) t) t where
-  group _ _ EmptyTable = pure EmptyTable
-  group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat where 
-    idx = M.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
-  {-# INLINE group #-}
-
--- | Group by a key
-instance Group (Key k t) t where
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixTab m ky of
     PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (index primary v) (singleton v)) <&> mconcat
