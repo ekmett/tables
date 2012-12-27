@@ -414,7 +414,10 @@ instance Field1 (Auto a) (Auto a) Int Int where
   _1 f (Auto k a) = indexed f (0 :: Int) k <&> \k' -> Auto k' a
 
 instance Field2 (Auto a) (Auto b) a b where
-  _2 f (Auto k a) = indexed f (0 :: Int) a <&> Auto k
+  _2 f (Auto k a) = indexed f (1 :: Int) a <&> Auto k
+
+instance (a ~ Int, b ~ Int, Applicative f) => Each Int f (Auto a) (Auto b) a b where
+  each f (Auto k a) = Auto <$> indexed f (0 :: Int) k <*> indexed f (1 :: Int) a
 
 data Auto a = Auto !Int a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
@@ -458,6 +461,7 @@ instance Tabular (Auto a) where
 instance (Indexable k p, q ~ (->), Functor f) => HasValue p q f (k, a) (k, b) a b where
   value f (k, a) = indexed f k a <&> (,) k
 
+
 -- | Simple (key, value) pairs
 instance Ord k => Tabular (k,v) where
   type PKT (k,v) = k
@@ -477,6 +481,9 @@ instance Ord k => Tabular (k,v) where
 
 instance Field1 (Value a) (Value b) a b where
   _1 f (Value a) = Value <$> indexed f (0 :: Int) a
+
+instance Functor f => Each Int f (Value a) (Value b) a b where
+  each f (Value a) = Value <$> indexed f (0 :: Int) a
 
 data Value a = Value a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
