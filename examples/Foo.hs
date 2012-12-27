@@ -58,8 +58,6 @@ instance Tabular (Foo a) where
 
   forMeta (FooTab x z) f = FooTab <$> f FooId x <*> f FooBaz z
 
-  prim f (FooTab x z) = f x <&> \x' -> FooTab x' z
-
   autoKey = autoIncrement fooId_
 
 test :: Table (Foo String)
