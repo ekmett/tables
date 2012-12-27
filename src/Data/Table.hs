@@ -410,6 +410,12 @@ class HasValue p q f s t a b | s -> a, t -> b, s b -> t, t a -> s where
 auto :: a -> Auto a
 auto = Auto 0
 
+instance Field1 (Auto a) (Auto a) Int Int where
+  _1 f (Auto k a) = indexed f (0 :: Int) k <&> \k' -> Auto k' a
+
+instance Field2 (Auto a) (Auto b) a b where
+  _2 f (Auto k a) = indexed f (0 :: Int) a <&> Auto k
+
 data Auto a = Auto !Int a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
 
@@ -468,6 +474,9 @@ instance Ord k => Tabular (k,v) where
 ------------------------------------------------------------------------------
 -- A simple value for set-like tables.
 ------------------------------------------------------------------------------
+
+instance Field1 (Value a) (Value b) a b where
+  _1 f (Value a) = Value <$> indexed f (0 :: Int) a
 
 data Value a = Value a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
