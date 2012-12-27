@@ -74,7 +74,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   -- | The type used internally for tables
   data Tab t :: *
   -- | The type used internally for columns
-  data Key (k :: * -> *) t ::  * -> *
+  data Key (k :: *) t ::  * -> *
 
   -- | evaluate an internal column
   key     :: Key k t a -> t -> a
@@ -352,17 +352,17 @@ fromList = foldl' (flip insert) empty
 
 -- * Lifting terms to types
 
-data KeyType t a where
-  Primary      :: KeyType Primary a
-  Candidate    :: KeyType Candidate a
-  Supplemental :: KeyType Supplemental a
+data KeyType t where
+  Primary      :: KeyType Primary
+  Candidate    :: KeyType Candidate
+  Supplemental :: KeyType Supplemental
 
-data Primary (a :: *)
-data Candidate (a :: *)
-data Supplemental (a :: *)
+data Primary
+data Candidate
+data Supplemental
 
 class IsKeyType k where
-  keyType :: Key k t a -> KeyType k a
+  keyType :: Key k t a -> KeyType k
 
 instance IsKeyType Primary where
   keyType _ = Primary
