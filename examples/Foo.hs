@@ -39,10 +39,7 @@ instance Tabular (Foo a) where
   data Key k (Foo a) b where
     FooId  :: Key Primary   (Foo a) Int
     FooBaz :: Key Candidate (Foo a) Double
-
-  data Tab (Foo a) = FooTab
-    (Index Primary   (Foo a) Int)
-    (Index Candidate (Foo a) Double)
+  data Tab t (Foo a) = FooTab (t Primary (Foo a) Int) (t Candidate (Foo a) Double)
 
   key FooId  = fooId
   key FooBaz = fooBaz
@@ -50,10 +47,10 @@ instance Tabular (Foo a) where
   primary = FooId
   primarily FooId r = r
 
-  mkTab f = FooTab (f FooId) (f FooBaz)
+  mkTab f               = FooTab <$> f FooId   <*> f FooBaz
+  forTab (FooTab x y) f = FooTab <$> f FooId x <*> f FooBaz y
   ixTab (FooTab x _) FooId  = x
   ixTab (FooTab _ x) FooBaz = x
-  forTab (FooTab x z) f = FooTab <$> f FooId x <*> f FooBaz z
 
   autoKey = autoIncrement fooId_
 

@@ -67,12 +67,14 @@ import Prelude hiding (null)
 {-# ANN module "HLint: ignore Eta reduce" #-}
 
 class Ord (PKT t) => Tabular (t :: *) where
-  -- | The type of the primary key
+  -- | The primary key type
   type PKT t :: *
-  -- | The type used internally for tables
-  data Tab t :: *
+
+  -- | Used to store indices
+  data Tab (l :: * -> * -> * -> *) t :: *
+
   -- | The type used internally for columns
-  data Key (k :: *) t ::  * -> *
+  data Key (k :: *) t :: * -> *
 
   -- | evaluate an internal column
   key     :: Key k t a -> t -> a
@@ -81,26 +83,19 @@ class Ord (PKT t) => Tabular (t :: *) where
   primary :: Key Primary t (PKT t)
 
   -- | ... and so if you find one, it had better be that one!
-  primarily  :: Key Primary t a -> ((a ~ PKT t) => r) -> r
+  primarily :: Key Primary t a -> ((a ~ PKT t) => r) -> r
 
-  -- | Construct a table given a function from key to index.
-  mkTab   :: (forall k a. (IsKeyType k, Ord a) => Key k t a -> Index k t a) -> Tab t
+  -- | Construct a Tab given a function from key to index.
+  mkTab :: Applicative h => (forall k a. (IsKeyType k, Ord a) => Key k t a -> h (l k t a)) -> h (Tab l t)
 
-  -- | Lookup an index
-  ixTab     :: Tab t -> Key k t a -> Index k t a
+  -- | Lookup an index in a Tab
+  ixTab :: Tab l t -> Key k t a -> l k t a
 
   -- | Loop over each index
-  forTab    :: Applicative h => Tab t -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> Index k t a -> h (Index k t a)) -> h (Tab t)
-
-  -- | Find the primary key index a tab
-  primTab :: Lens' (Tab t) (Index Primary t (PKT t))
-  primTab f t = f (ixTab t primary) <&> \ u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
-    PrimaryIndex _ -> primarily k u
-    _              -> o
-  {-# INLINE primTab #-}
+  forTab :: Applicative h => Tab l t -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> l k t a -> h (m k t a)) -> h (Tab m t)
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments.
-  autoKey    :: t -> Maybe (Tab t -> t)
+  autoKey    :: t -> Maybe (Tab Index t -> t)
   autoKey _ = Nothing
   {-# INLINE autoKey #-}
 
@@ -112,9 +107,9 @@ class Ord (PKT t) => Tabular (t :: *) where
 -- To enable auto-increment for a table with primary key @primaryKeyField@, set:
 --
 -- @'autoKey' = 'autoIncrement' primaryKeyField@
-autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t -> t)
+autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab Index t -> t)
 autoIncrement pk t
-  | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb^?primaryMap.indicesOf traverseMax)
+  | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb ^? primaryMap.indicesOf traverseMax)
   | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
 
@@ -123,9 +118,12 @@ data Index k t a where
   CandidateIndex    :: Ord a => Map a t   -> Index Candidate    t a
   SupplementalIndex :: Ord a => Map a [t] -> Index Supplemental t a
 
--- | This lens updates the primary key in a table.
-primaryMap :: Tabular t => Lens' (Tab t) (Map (PKT t) t)
-primaryMap = primTab . \ f (PrimaryIndex m) -> PrimaryIndex <$> f m
+-- | Find the primary key index a tab
+primaryMap :: Tabular t => Lens' (Tab Index t) (Map (PKT t) t)
+primaryMap f t = case ixTab t primary of
+  PrimaryIndex m -> f m <&> \u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
+    PrimaryIndex _ -> primarily k (PrimaryIndex u)
+    _              -> o
 {-# INLINE primaryMap #-}
 
 -- * Overloaded keys
@@ -135,8 +133,8 @@ primaryMap = primTab . \ f (PrimaryIndex m) -> PrimaryIndex <$> f m
 ------------------------------------------------------------------------------
 
 data Table t where
-  EmptyTable ::                       Table t
-  Table      :: Tabular t => Tab t -> Table t
+  EmptyTable ::                             Table t
+  Table      :: Tabular t => Tab Index t -> Table t
   deriving Typeable
 
 instance (Tabular t, Data t) => Data (Table t) where
@@ -194,8 +192,8 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
     m & at ky . anon [] Prelude.null %~ let pys = key primary <$> ys in filter (\e -> key primary e `Prelude.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
-emptyTab :: Tabular t => Tab t
-emptyTab = mkTab $ \k -> case keyType k of
+emptyTab :: Tabular t => Tab Index t
+emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
   Primary      -> primarily k (PrimaryIndex Map.empty)
   Candidate    -> CandidateIndex Map.empty
   Supplemental -> SupplementalIndex Map.empty
@@ -216,7 +214,7 @@ null (Table m)  = Map.null (m^.primaryMap)
 
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
-singleton row = Table $ mkTab $ \ k -> case keyType k of
+singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k of
   Primary      -> primarily k $ PrimaryIndex $ Map.singleton (key k row) row
   Candidate    -> CandidateIndex             $ Map.singleton (key k row) row
   Supplemental -> SupplementalIndex          $ Map.singleton (key k row) [row]
