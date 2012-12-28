@@ -92,7 +92,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   data Key (k :: *) t :: * -> *
 
   -- | Extract the value of a 'Key'
-  index :: Key k t a -> t -> a
+  fetch :: Key k t a -> t -> a
 
   -- | Every 'Table' has one 'Primary' 'Key'
   primary :: Key Primary t (PKT t)
@@ -124,7 +124,7 @@ class Ord (PKT t) => Tabular (t :: *) where
 -- @'autoKey' = 'autoIncrement' primaryKeyField@
 autoIncrement :: (Tabular t, PKT t ~ Int) => Loupe' t Int -> t -> Maybe (Tab t (Index t) -> t)
 autoIncrement pk t
-  | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb ^? primaryMap.indicesOf traverseMax)
+  | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb ^? primaryMap.traverseMax.index)
   | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
 
@@ -217,10 +217,10 @@ instance Tabular t => At (Table t) where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (M.delete . index primary)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (M.delete . index k)) idx ts
-  SupplementalIndex idx -> SupplementalIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (index k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon [] P.null %~ let pys = index primary <$> ys in filter (\e -> index primary e `P.notElem` pys)
+  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (M.delete . fetch primary)) idx ts
+  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (M.delete . fetch k)) idx ts
+  SupplementalIndex idx -> SupplementalIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
+    m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (Index t)
@@ -246,17 +246,17 @@ null (Table m)  = M.null (m^.primaryMap)
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
 singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k of
-  Primary      -> primarily k $ PrimaryIndex $ M.singleton (index k row) row
-  Candidate    -> CandidateIndex             $ M.singleton (index k row) row
-  Supplemental -> SupplementalIndex          $ M.singleton (index k row) [row]
+  Primary      -> primarily k $ PrimaryIndex $ M.singleton (fetch k row) row
+  Candidate    -> CandidateIndex             $ M.singleton (fetch k row) row
+  Supplemental -> SupplementalIndex          $ M.singleton (fetch k row) [row]
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
 collisions t (Table m)  = getConst $ forTab m $ \k i -> Const $ case i of
-  PrimaryIndex idx   -> primarily k $ idx^..ix (index k t)
-  CandidateIndex idx ->               idx^..ix (index k t)
+  PrimaryIndex idx   -> primarily k $ idx^..ix (fetch k t)
+  CandidateIndex idx ->               idx^..ix (fetch k t)
   _                  -> []
 {-# INLINE collisions #-}
 
@@ -277,9 +277,9 @@ insert t0 r = case autoTab t0 of
   go t = case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
-      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (index k t) ?~ t
-      CandidateIndex idx    -> CandidateIndex             $ idx & at (index k t) ?~ t
-      SupplementalIndex idx -> SupplementalIndex          $ idx & at (index k t) . anon [] P.null %~ (t:)
+      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (fetch k t) ?~ t
+      CandidateIndex idx    -> CandidateIndex             $ idx & at (fetch k t) ?~ t
+      SupplementalIndex idx -> SupplementalIndex          $ idx & at (fetch k t) . anon [] P.null %~ (t:)
   {-# INLINE go #-}
 {-# INLINE insert #-}
 
@@ -380,7 +380,7 @@ instance With (Key k t) t where
 
   group _ _ EmptyTable = pure EmptyTable
   group ky f (Table m) = case ixTab m ky of
-    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (index primary v) (singleton v)) <&> mconcat
+    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (fetch primary v) (singleton v)) <&> mconcat
     CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (M.toList idx) <&> mconcat
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
   {-# INLINE group #-}
@@ -467,7 +467,7 @@ instance Tabular (Auto a) where
   data Tab (Auto a) i = AutoTab (i Primary Int)
   data Key p (Auto a) b where
     AutoKey :: Key Primary (Auto a) Int
-  index AutoKey (Auto k _) = k
+  fetch AutoKey (Auto k _) = k
   primary = AutoKey
   primarily AutoKey r = r
   mkTab f = AutoTab <$> f AutoKey
@@ -489,7 +489,7 @@ instance Ord k => Tabular (k,v) where
   data Tab (k,v) i = KVTab (i Primary k)
   data Key p (k,v) b where
     Fst :: Key Primary (k,v) k
-  index Fst = fst
+  fetch Fst = fst
   primary = Fst
   primarily Fst r = r
   mkTab f = KVTab <$> f Fst
@@ -538,7 +538,7 @@ instance Ord a => Tabular (Value a) where
   data Tab (Value a) i = ValueTab (i Primary a)
   data Key p (Value a) b where
     Val :: Key Primary (Value a) a
-  index Val = extract
+  fetch Val = extract
   primary = Val
   primarily Val r = r
   mkTab f = ValueTab <$> f Val
