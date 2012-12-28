@@ -52,7 +52,7 @@ instance Tabular (Foo a) where
   ixTab (FooTab x _) FooId  = x
   ixTab (FooTab _ x) FooBaz = x
 
-  autoKey = autoIncrement fooId_
+  autoTab = autoIncrement fooId_
 
 test :: Table (Foo String)
 test = [Foo 0 "One" 1.0, Foo 0 "Two" 2.0, Foo 0 "Three" 3.0, Foo 0 "Four" 4.0, Foo 0 "Five" 5.0]^.table

@@ -200,6 +200,19 @@ instance Foldable Table where
   foldMap f (Table m)  = foldMapOf (primaryMap.folded) f m
   {-# INLINE foldMap #-}
 
+type instance IxKey (Table t) = PKT t
+type instance IxValue (Table t) = t
+
+instance Applicative f => Ixed f (Table t) where
+  ix _ _ EmptyTable = pure EmptyTable
+  ix k f (Table m) = Table <$> primaryMap (ix k f) m
+  {-# INLINE ix #-}
+
+instance Tabular t => At (Table t) where
+  at k f EmptyTable = maybe EmptyTable singleton <$> indexed f k Nothing
+  at k f (Table m)  = Table <$> primaryMap (at k f) m
+  {-# INLINE at #-}
+
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
