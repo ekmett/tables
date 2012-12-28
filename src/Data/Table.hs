@@ -1,5 +1,6 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE LiberalTypeSynonyms #-}
 {-# LANGUAGE DeriveDataTypeable #-}
@@ -73,7 +74,7 @@ import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
 import Data.Traversable
-import qualified Prelude
+import qualified Prelude as P
 import Prelude hiding (null)
 
 {-# ANN module "HLint: ignore Reduce duplication" #-}
@@ -219,7 +220,7 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
   PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (M.delete . index primary)) idx ts
   CandidateIndex idx    -> CandidateIndex $ foldl' (flip (M.delete . index k)) idx ts
   SupplementalIndex idx -> SupplementalIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (index k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon [] Prelude.null %~ let pys = index primary <$> ys in filter (\e -> index primary e `Prelude.notElem` pys)
+    m & at ky . anon [] P.null %~ let pys = index primary <$> ys in filter (\e -> index primary e `P.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (Index t)
@@ -278,7 +279,7 @@ insert t0 r = case autoTab t0 of
     Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
       PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (index k t) ?~ t
       CandidateIndex idx    -> CandidateIndex             $ idx & at (index k t) ?~ t
-      SupplementalIndex idx -> SupplementalIndex          $ idx & at (index k t) . anon [] Prelude.null %~ (t:)
+      SupplementalIndex idx -> SupplementalIndex          $ idx & at (index k t) . anon [] P.null %~ (t:)
   {-# INLINE go #-}
 {-# INLINE insert #-}
 
@@ -301,6 +302,21 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
+instance (Tabular b, Applicative f, i ~ PKT a) => Each i f (Table a) (Table b) a b where
+  each _ EmptyTable = pure EmptyTable
+  each f (Table m)  = P.foldr insert empty <$> sequenceA (M.foldrWithKey (\i a r -> indexed f i a : r) [] $ m^.primaryMap)
+
+-- | Traverse all of the rows in a table without changing any types
+rows' :: Traversal' (Table t) t
+rows' _ EmptyTable = pure EmptyTable
+rows' f r@Table{} = P.foldr insert empty <$> traverse f (toList r)
+{-# INLINE rows' #-}
+
+-- | Traverse all of the rows in a table, potentially changing table types completely.
+rows :: Tabular t => Traversal (Table s) (Table t) s t
+rows f r = P.foldr insert empty <$> traverse f (toList r)
+{-# INLINE rows #-}
+
 class With q t | q -> t where
   -- | Select a smaller, updateable subset of the rows of a table using an index or an arbitrary function.
   with :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
@@ -314,6 +330,7 @@ class With q t | q -> t where
   deleteWith :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
   deleteWith p cmp a t = set (with p cmp a) empty t
   {-# INLINE deleteWith #-}
+
 
 instance With ((->) t) t where
   with _  _   _ f EmptyTable  = f EmptyTable
@@ -368,16 +385,7 @@ instance With (Key k t) t where
     SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
   {-# INLINE group #-}
 
--- | Traverse all of the rows in a table without changing any types
-rows' :: Traversal' (Table t) t
-rows' _ EmptyTable = pure EmptyTable
-rows' f r@Table{} = Prelude.foldr insert empty <$> traverse f (toList r)
-{-# INLINE rows' #-}
 
--- | Traverse all of the rows in a table, potentially changing table types completely.
-rows :: Tabular t => Traversal (Table s) (Table t) s t
-rows f r = Prelude.foldr insert empty <$> traverse f (toList r)
-{-# INLINE rows #-}
 
 -- | Build up a table from a list
 fromList :: Tabular t => [t] -> Table t
