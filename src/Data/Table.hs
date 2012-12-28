@@ -56,7 +56,7 @@ module Data.Table
   , autoIncrement
   -- * Implementation Details
   , IsKeyType(..)
-  , KeyType(..), Primary, Candidate, Supplemental
+  , KeyType(..), Primary, Candidate, Supplemental, Inverted
   , Index(..)
   ) where
 
