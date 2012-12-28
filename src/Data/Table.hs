@@ -44,6 +44,8 @@ module Data.Table
   , null
   , count
   , With(..)
+  , Withal(..)
+  , Group(..)
   , insert
   , delete
   , rows
@@ -63,6 +65,7 @@ module Data.Table
 import Control.Applicative hiding (empty)
 import Control.Comonad
 import Control.Lens
+import Control.Lens.Internal
 import Control.Monad
 import Control.Monad.Fix
 import Data.Data
@@ -73,6 +76,7 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
+import qualified Data.Set as S
 import Data.Traversable
 import qualified Prelude as P
 import Prelude hiding (null)
@@ -92,7 +96,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   data Key (k :: *) t :: * -> *
 
   -- | Extract the value of a 'Key'
-  fetch :: Key k t a -> t -> KeyResult k a
+  fetch :: Key k t a -> t -> a
 
   -- | Every 'Table' has one 'Primary' 'Key'
   primary :: Key Primary t (PKT t)
@@ -101,13 +105,13 @@ class Ord (PKT t) => Tabular (t :: *) where
   primarily :: Key Primary t a -> ((a ~ PKT t) => r) -> r
 
   -- | Construct a 'Tab' given a function from key to index.
-  mkTab :: Applicative h => (forall k a. (IsKeyType k, Ord a) => Key k t a -> h (i k a)) -> h (Tab t i)
+  mkTab :: Applicative h => (forall k a. IsKeyType k a => Key k t a -> h (i k a)) -> h (Tab t i)
 
   -- | Lookup an index in a 'Tab'
   ixTab :: Tab t i -> Key k t a -> i k a
 
   -- | Loop over each index in a 'Tab'
-  forTab :: Applicative h => Tab t i -> (forall k a . (IsKeyType k, Ord a) => Key k t a -> i k a -> h (j k a)) -> h (Tab t j)
+  forTab :: Applicative h => Tab t i -> (forall k a . IsKeyType k a => Key k t a -> i k a -> h (j k a)) -> h (Tab t j)
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments.
   autoTab :: t -> Maybe (Tab t (Index t) -> t)
@@ -133,7 +137,7 @@ data Index t k a where
   PrimaryIndex      :: Map (PKT t) t      -> Index t Primary      a
   CandidateIndex    :: Ord a => Map a t   -> Index t Candidate    a
   SupplementalIndex :: Ord a => Map a [t] -> Index t Supplemental a
-  InvertedIndex     :: Ord a => Map a [t] -> Index t Inverted     a
+  InvertedIndex     :: Ord a => Map a [t] -> Index t Inverted     [a]
 
 -- | Find the primary key index a tab
 primaryMap :: Tabular t => Lens' (Tab t (Index t)) (Map (PKT t) t)
@@ -218,8 +222,8 @@ instance Tabular t => At (Table t) where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ foldl' (flip (M.delete . fetch primary)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ foldl' (flip (M.delete . fetch k)) idx ts
+  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ F.foldl' (flip (M.delete . fetch primary)) idx ts
+  CandidateIndex idx    -> CandidateIndex $ F.foldl' (flip (M.delete . fetch k)) idx ts
   SupplementalIndex idx -> SupplementalIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   InvertedIndex idx -> InvertedIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
@@ -323,12 +327,83 @@ rows :: Tabular t => Traversal (Table s) (Table t) s t
 rows f r = P.foldr insert empty <$> traverse f (toList r)
 {-# INLINE rows #-}
 
+class Group f q t i | q -> t i where
+  -- | Group by a given key or arbitrary function.
+  group :: (Indexable i p, Ord i) => q -> IndexedLensLike' p f (Table t) (Table t)
+
+instance Applicative f => Group f (t -> a) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat where
+    idx = M.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
+  {-# INLINE group #-}
+
+instance Applicative f => Group f (Key Primary t a) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    PrimaryIndex idx -> primarily ky $ for (toList idx) (\v -> indexed f (fetch primary v) (singleton v)) <&> mconcat
+  {-# INLINE group #-}
+
+instance Applicative f => Group f (Key Candidate t a) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    CandidateIndex idx -> traverse (\(k,v) -> indexed f k (singleton v)) (M.toList idx) <&> mconcat
+  {-# INLINE group #-}
+
+instance Applicative f => Group f (Key Supplemental t a) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
+  {-# INLINE group #-}
+
+instance (Applicative f, Gettable f) => Group f (Key Inverted t [a]) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    InvertedIndex idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
+
+-- | Search inverted indices
+class Withal q t | q -> t where
+  withAny :: Ord a => q [a] -> [a] -> Lens' (Table t) (Table t)
+  withAll :: Ord a => q [a] -> [a] -> Lens' (Table t) (Table t)
+
+  deleteWithAny :: Ord a => q [a] -> [a] -> Table t -> Table t
+  deleteWithAny p as t = set (withAny p as) empty t
+  {-# INLINE deleteWithAny #-}
+
+  deleteWithAll :: Ord a => q [a] -> [a] -> Table t -> Table t
+  deleteWithAll p as t = set (withAll p as) empty t
+  {-# INLINE deleteWithAll #-}
+
+instance Withal ((->) t) t where
+  withAny _ _  f EmptyTable  = f EmptyTable
+  withAny k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.any (\e -> ss^.ix e) . k)
+    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+          ss = S.fromList as
+  {-# INLINE withAny #-}
+
+  withAll _ _  f EmptyTable  = f EmptyTable
+  withAll k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.all (\e -> ss^.ix e) . k)
+    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+          ss = S.fromList as
+  {-# INLINE withAll #-}
+
+instance Withal (Key Inverted t) t where
+  withAny _  _  f EmptyTable  = f EmptyTable
+  withAny ky as f r@(Table m) = go $ case ixTab m ky of
+    InvertedIndex idx -> as >>= \a -> idx^..ix a.folded
+    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE withAny #-}
+
+  withAll _  _  f EmptyTable  = f EmptyTable
+  withAll _  [] f r           = f r -- every row has all of an empty list of keywords
+  withAll ky (a:as) f r@(Table m) = case ixTab m ky of
+    InvertedIndex idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
+                         in go $ F.toList $ F.foldl' (\r -> M.intersection r . mkm) (mkm a) as
+    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE withAll #-}
+
 class With q t | q -> t where
   -- | Select a smaller, updateable subset of the rows of a table using an index or an arbitrary function.
   with :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Lens' (Table t) (Table t)
-
-  -- | Group by a given key or arbitrary function.
-  group :: (Indexable a p, Applicative f, Ord a) => q a -> IndexedLensLike' p f (Table t) (Table t)
 
   -- | Delete selected rows from a table
   --
@@ -336,7 +411,6 @@ class With q t | q -> t where
   deleteWith :: Ord a => q a -> (forall x. Ord x => x -> x -> Bool) -> a -> Table t -> Table t
   deleteWith p cmp a t = set (with p cmp a) empty t
   {-# INLINE deleteWith #-}
-
 
 instance With ((->) t) t where
   with _  _   _ f EmptyTable  = f EmptyTable
@@ -349,39 +423,34 @@ instance With ((->) t) t where
       eq = cmp EQ EQ
       gt = cmp GT EQ
       go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE with #-}
 
-  group _ _ EmptyTable = pure EmptyTable
-  group ky f (Table m) = traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat where 
-    idx = M.fromListWith (++) (m^..primaryMap.folded.to(\v -> (ky v, [v])))
-  {-# INLINE group #-}
 
-instance With (Key k t) t where
+instance With (Key Primary t) t where
   with _   _   _ f EmptyTable  = f EmptyTable
   with ky cmp a f r@(Table m)
-    | lt && eq && gt = f r -- all rows
+    | lt && eq && gt = f r
+    | not lt && eq && not gt = primarily ky $ go $ m^..primaryMap.ix a
+    | lt || eq || gt = primarily ky $ go $ case M.splitLookup a (m^.primaryMap) of
+        (l,e,g) -> (if lt then F.toList l else []) ++ (if eq then F.toList e else []) ++ (if gt then F.toList g else [])
+    | otherwise = f EmptyTable <&> mappend r
+    where
+      lt = cmp LT EQ
+      eq = cmp EQ EQ
+      gt = cmp GT EQ
+      go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE with #-}
+
+instance With (Key Candidate t) t where
+  with _   _   _ f EmptyTable  = f EmptyTable
+  with ky cmp a f r@(Table m)
+    | lt && eq && gt = f r
     | not lt && eq && not gt = case ixTab m ky of
-      PrimaryIndex idx      -> go $ primarily ky (idx^..ix a)
       CandidateIndex idx    -> go $ idx^..ix a
-      SupplementalIndex idx -> go $ idx^..ix a.folded
-      InvertedIndex idx     -> go $ idx^..ix a.folded
     | lt || eq || gt = case ixTab m ky of
-      PrimaryIndex idx -> primarily ky $ case M.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then F.toList l else [])
-                     ++ (if eq then F.toList e else [])
-                     ++ (if gt then F.toList g else [])
-      CandidateIndex idx -> case M.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then F.toList l else [])
-                     ++ (if eq then F.toList e else [])
-                     ++ (if gt then F.toList g else [])
-      SupplementalIndex idx -> case M.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then F.concat l else [])
-                     ++ (if eq then F.concat e else [])
-                     ++ (if gt then F.concat g else [])
-      InvertedIndex idx -> case M.splitLookup a idx of
-        (l,e,g) -> go $ (if lt then F.concat l else [])
-                     ++ (if eq then F.concat e else [])
-                     ++ (if gt then F.concat g else [])
-    | otherwise      = f EmptyTable <&> mappend r -- no match
+      CandidateIndex idx -> go $ case M.splitLookup a idx of
+        (l,e,g) -> (if lt then F.toList l else []) ++ (if eq then F.toList e else []) ++ (if gt then F.toList g else [])
+    | otherwise = f EmptyTable <&> mappend r -- no match
     where
         lt = cmp LT EQ
         eq = cmp EQ EQ
@@ -389,15 +458,22 @@ instance With (Key k t) t where
         go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
-  group _ _ EmptyTable = pure EmptyTable
-  group ky f (Table m) = case ixTab m ky of
-    PrimaryIndex idx      -> primarily ky $ for (toList idx) (\v -> indexed f (fetch primary v) (singleton v)) <&> mconcat
-    CandidateIndex idx    -> traverse (\(k,v) -> indexed f k (singleton v)) (M.toList idx) <&> mconcat
-    SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
-    InvertedIndex idx     -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
-  {-# INLINE group #-}
-
-
+instance With (Key Supplemental t) t where
+  with _   _   _ f EmptyTable  = f EmptyTable
+  with ky cmp a f r@(Table m)
+    | lt && eq && gt = f r -- all rows
+    | not lt && eq && not gt = case ixTab m ky of
+      SupplementalIndex idx -> go $ idx^..ix a.folded
+    | lt || eq || gt = go $ case ixTab m ky of
+      SupplementalIndex idx -> case M.splitLookup a idx of
+        (l,e,g) -> (if lt then F.concat l else []) ++ (if eq then F.concat e else []) ++ (if gt then F.concat g else [])
+    | otherwise      = f EmptyTable <&> mappend r -- no match
+    where
+        lt = cmp LT EQ
+        eq = cmp EQ EQ
+        gt = cmp GT EQ
+        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE with #-}
 
 -- | Build up a table from a list
 fromList :: Tabular t => [t] -> Table t
@@ -407,11 +483,11 @@ fromList = foldl' (flip insert) empty
 -- * Lifting terms to types
 
 -- | Value-level key types
-data KeyType t where
-  Primary      :: KeyType Primary
-  Candidate    :: KeyType Candidate
-  Supplemental :: KeyType Supplemental
-  Inverted     :: KeyType Inverted
+data KeyType t a where
+  Primary      :: Ord a => KeyType Primary a
+  Candidate    :: Ord a => KeyType Candidate a
+  Supplemental :: Ord a => KeyType Supplemental a
+  Inverted     :: Ord a => KeyType Inverted [a]
 
 -- |  Type level key types
 data Primary
@@ -419,27 +495,22 @@ data Candidate
 data Supplemental
 data Inverted
 
-class IsKeyType k where
-  type KeyResult k a
-  keyType :: Key k t a -> KeyType k
+class IsKeyType k a where
+  keyType :: Key k t a -> KeyType k a
 
-instance IsKeyType Primary where
-  type KeyResult Primary a = a
+instance Ord a => IsKeyType Primary a where
   keyType _ = Primary
   {-# INLINE keyType #-}
 
-instance IsKeyType Candidate where
-  type KeyResult Candidate a = a
+instance Ord a => IsKeyType Candidate a where
   keyType _ = Candidate
   {-# INLINE keyType #-}
 
-instance IsKeyType Supplemental where
-  type KeyResult Supplemental a = a
+instance Ord a => IsKeyType Supplemental a where
   keyType _ = Supplemental
   {-# INLINE keyType #-}
 
-instance IsKeyType Inverted where
-  type KeyResult Inverted a = [a]
+instance Ord a => IsKeyType Inverted [a] where
   keyType _ = Inverted
   {-# INLINE keyType #-}
 
