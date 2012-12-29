@@ -42,7 +42,7 @@ instance Tabular (Foo a) where
   data Tab (Foo a) i = FooTab (i Primary Int) (i Candidate Double)
 
   fetch FooId  = fooId
-  detch FooBaz = fooBaz
+  fetch FooBaz = fooBaz
 
   primary = FooId
   primarily FooId r = r
