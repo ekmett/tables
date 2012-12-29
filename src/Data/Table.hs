@@ -58,7 +58,11 @@ module Data.Table
   , autoIncrement
   -- * Implementation Details
   , IsKeyType(..)
-  , KeyType(..), Primary, Candidate, Supplemental, Inverted
+  , KeyType(..)
+  , Primary
+  , Candidate, CandidateInt
+  , Supplemental, SupplementalInt
+  , Inverted, InvertedInt
   , Index(..)
   ) where
 
@@ -72,6 +76,8 @@ import Data.Data
 import Data.Foldable as F
 import Data.Function (on)
 import Data.Functor.Identity
+import Data.IntMap (IntMap)
+import qualified Data.IntMap as IM
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
@@ -134,16 +140,19 @@ autoIncrement pk t
 
 -- | This is used to store a single index.
 data Index t k a where
-  PrimaryIndex      :: Map (PKT t) t      -> Index t Primary      a
-  CandidateIndex    :: Ord a => Map a t   -> Index t Candidate    a
-  SupplementalIndex :: Ord a => Map a [t] -> Index t Supplemental a
-  InvertedIndex     :: Ord a => Map a [t] -> Index t Inverted     [a]
+  PrimaryMap         :: Map (PKT t) t      -> Index t Primary         a
+  CandidateMap       :: Ord a => Map a t   -> Index t Candidate       a
+  CandidateIntMap    :: IntMap t           -> Index t CandidateInt    Int
+  SupplementalMap    :: Ord a => Map a [t] -> Index t Supplemental    a
+  SupplementalIntMap :: IntMap [t]         -> Index t SupplementalInt Int
+  InvertedMap        :: Ord a => Map a [t] -> Index t Inverted        [a]
+  InvertedIntMap     :: IntMap [t]         -> Index t InvertedInt     [Int]
 
 -- | Find the primary key index a tab
 primaryMap :: Tabular t => Lens' (Tab t (Index t)) (Map (PKT t) t)
 primaryMap f t = case ixTab t primary of
-  PrimaryIndex m -> f m <&> \u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
-    PrimaryIndex _ -> primarily k (PrimaryIndex u)
+  PrimaryMap m -> f m <&> \u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
+    PrimaryMap _ -> primarily k (PrimaryMap u)
     _              -> o
 {-# INLINE primaryMap #-}
 
@@ -222,20 +231,29 @@ instance Tabular t => At (Table t) where
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
 deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Identity $ case i of
-  PrimaryIndex idx      -> PrimaryIndex $ primarily k $ F.foldl' (flip (M.delete . fetch primary)) idx ts
-  CandidateIndex idx    -> CandidateIndex $ F.foldl' (flip (M.delete . fetch k)) idx ts
-  SupplementalIndex idx -> SupplementalIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
+  PrimaryMap idx      -> PrimaryMap $ primarily k $ F.foldl' (flip (M.delete . fetch primary)) idx ts
+  CandidateMap idx    -> CandidateMap             $ F.foldl' (flip (M.delete . fetch k)) idx ts
+  CandidateIntMap idx -> CandidateIntMap          $ F.foldl' (flip (IM.delete . fetch k)) idx ts
+  SupplementalMap idx -> SupplementalMap $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
-  InvertedIndex idx -> InvertedIndex $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
+  SupplementalIntMap idx -> SupplementalIntMap $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  InvertedMap idx -> InvertedMap $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
+    m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  InvertedIntMap idx -> InvertedIntMap $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
+    m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (Index t)
 emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
-  Primary      -> primarily k (PrimaryIndex M.empty)
-  Candidate    -> CandidateIndex M.empty
-  Supplemental -> SupplementalIndex M.empty
-  Inverted     -> InvertedIndex M.empty
+  Primary         -> primarily k (PrimaryMap M.empty)
+  Candidate       -> CandidateMap    M.empty
+  Supplemental    -> SupplementalMap M.empty
+  Inverted        -> InvertedMap     M.empty
+  CandidateInt    -> CandidateIntMap    IM.empty
+  SupplementalInt -> SupplementalIntMap IM.empty
+  InvertedInt     -> InvertedIntMap     IM.empty
 {-# INLINE emptyTab #-}
 
 -- * Public API
@@ -254,18 +272,22 @@ null (Table m)  = M.null (m^.primaryMap)
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
 singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k of
-  Primary      -> primarily k $ PrimaryIndex $ M.singleton (fetch k row) row
-  Candidate    -> CandidateIndex             $ M.singleton (fetch k row) row
-  Supplemental -> SupplementalIndex          $ M.singleton (fetch k row) [row]
-  Inverted     -> InvertedIndex              $ M.fromList $ zip (fetch k row) (repeat [row])
+  Primary         -> primarily k $ PrimaryMap $ M.singleton (fetch k row) row
+  Candidate       -> CandidateMap             $ M.singleton (fetch k row) row
+  CandidateInt    -> CandidateIntMap          $ IM.singleton (fetch k row) row
+  Supplemental    -> SupplementalMap          $ M.singleton (fetch k row) [row]
+  SupplementalInt -> SupplementalIntMap       $ IM.singleton (fetch k row) [row]
+  Inverted        -> InvertedMap              $ M.fromList $ zip (fetch k row) (repeat [row])
+  InvertedInt     -> InvertedIntMap           $ IM.fromList $ zip (fetch k row) (repeat [row])
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
 collisions t (Table m)  = getConst $ forTab m $ \k i -> Const $ case i of
-  PrimaryIndex idx   -> primarily k $ idx^..ix (fetch k t)
-  CandidateIndex idx ->               idx^..ix (fetch k t)
+  PrimaryMap idx      -> primarily k $ idx^..ix (fetch k t)
+  CandidateMap idx    ->               idx^..ix (fetch k t)
+  CandidateIntMap idx ->               idx^..ix (fetch k t)
   _                  -> []
 {-# INLINE collisions #-}
 
@@ -286,10 +308,13 @@ insert t0 r = case autoTab t0 of
   go t = case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
-      PrimaryIndex idx      -> primarily k $ PrimaryIndex $ idx & at (fetch k t) ?~ t
-      CandidateIndex idx    -> CandidateIndex             $ idx & at (fetch k t) ?~ t
-      SupplementalIndex idx -> SupplementalIndex          $ idx & at (fetch k t) . anon [] P.null %~ (t:)
-      InvertedIndex idx     -> InvertedIndex              $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+      PrimaryMap idx         -> primarily k $ PrimaryMap $ idx & at (fetch k t) ?~ t
+      CandidateMap idx       -> CandidateMap             $ idx & at (fetch k t) ?~ t
+      CandidateIntMap idx    -> CandidateIntMap          $ idx & at (fetch k t) ?~ t
+      SupplementalMap idx    -> SupplementalMap          $ idx & at (fetch k t) . anon [] P.null %~ (t:)
+      SupplementalIntMap idx -> SupplementalIntMap       $ idx & at (fetch k t) . anon [] P.null %~ (t:)
+      InvertedMap idx        -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+      InvertedIntMap idx     -> InvertedIntMap           $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
   {-# INLINE go #-}
 {-# INLINE insert #-}
 
@@ -340,25 +365,42 @@ instance Applicative f => Group f (t -> a) t a where
 instance Applicative f => Group f (Key Primary t a) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    PrimaryIndex idx -> primarily ky $ for (toList idx) (\v -> indexed f (fetch primary v) (singleton v)) <&> mconcat
+    PrimaryMap idx -> primarily ky $ for (toList idx) (\v -> indexed f (fetch primary v) (singleton v)) <&> mconcat
   {-# INLINE group #-}
 
 instance Applicative f => Group f (Key Candidate t a) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    CandidateIndex idx -> traverse (\(k,v) -> indexed f k (singleton v)) (M.toList idx) <&> mconcat
+    CandidateMap idx -> traverse (\(k,v) -> indexed f k (singleton v)) (M.toList idx) <&> mconcat
+  {-# INLINE group #-}
+
+instance (Applicative f, a ~ Int) => Group f (Key CandidateInt t a) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    CandidateIntMap idx -> traverse (\(k,v) -> indexed f k (singleton v)) (IM.toList idx) <&> mconcat
   {-# INLINE group #-}
 
 instance Applicative f => Group f (Key Supplemental t a) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    SupplementalIndex idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
+    SupplementalMap idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (M.toList idx) <&> mconcat
+  {-# INLINE group #-}
+
+instance (Applicative f, a ~ Int) => Group f (Key SupplementalInt t a) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    SupplementalIntMap idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (IM.toList idx) <&> mconcat
   {-# INLINE group #-}
 
 instance (Applicative f, Gettable f) => Group f (Key Inverted t [a]) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    InvertedIndex idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
+    InvertedMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
+
+instance (Applicative f, Gettable f, a ~ Int) => Group f (Key InvertedInt t [a]) t a where
+  group _  _ EmptyTable = pure EmptyTable
+  group ky f (Table m)  = case ixTab m ky of
+    InvertedIntMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ IM.toList idx
 
 -- | Search inverted indices
 class Withal q t | q -> t where
@@ -389,15 +431,30 @@ instance Withal ((->) t) t where
 instance Withal (Key Inverted t) t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
-    InvertedIndex idx -> as >>= \a -> idx^..ix a.folded
+    InvertedMap idx -> as >>= \a -> idx^..ix a.folded
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAny #-}
 
   withAll _  _  f EmptyTable  = f EmptyTable
   withAll _  [] f r           = f r -- every row has all of an empty list of keywords
   withAll ky (a:as) f r@(Table m) = case ixTab m ky of
-    InvertedIndex idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
+    InvertedMap idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
                          in go $ F.toList $ F.foldl' (\r -> M.intersection r . mkm) (mkm a) as
+    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE withAll #-}
+
+instance Withal (Key InvertedInt t) t where
+  withAny _  _  f EmptyTable  = f EmptyTable
+  withAny ky as f r@(Table m) = go $ case ixTab m ky of
+    InvertedIntMap idx -> as >>= \a -> idx^..ix a.folded
+    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE withAny #-}
+
+  withAll _  _  f EmptyTable  = f EmptyTable
+  withAll _  [] f r           = f r -- every row has all of an empty list of keywords
+  withAll ky (a:as) f r@(Table m) = case ixTab m ky of
+    InvertedIntMap idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
+                          in go $ F.toList $ F.foldl' (\r -> M.intersection r . mkm) (mkm a) as
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
@@ -425,7 +482,6 @@ instance With ((->) t) t where
       go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
-
 instance With (Key Primary t) t where
   with _   _   _ f EmptyTable  = f EmptyTable
   with ky cmp a f r@(Table m)
@@ -446,9 +502,26 @@ instance With (Key Candidate t) t where
   with ky cmp a f r@(Table m)
     | lt && eq && gt = f r
     | not lt && eq && not gt = case ixTab m ky of
-      CandidateIndex idx    -> go $ idx^..ix a
+      CandidateMap idx    -> go $ idx^..ix a
     | lt || eq || gt = case ixTab m ky of
-      CandidateIndex idx -> go $ case M.splitLookup a idx of
+      CandidateMap idx -> go $ case M.splitLookup a idx of
+        (l,e,g) -> (if lt then F.toList l else []) ++ (if eq then F.toList e else []) ++ (if gt then F.toList g else [])
+    | otherwise = f EmptyTable <&> mappend r -- no match
+    where
+        lt = cmp LT EQ
+        eq = cmp EQ EQ
+        gt = cmp GT EQ
+        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE with #-}
+
+instance With (Key CandidateInt t) t where
+  with _   _   _ f EmptyTable  = f EmptyTable
+  with ky cmp a f r@(Table m)
+    | lt && eq && gt = f r
+    | not lt && eq && not gt = case ixTab m ky of
+      CandidateIntMap idx    -> go $ idx^..ix a
+    | lt || eq || gt = case ixTab m ky of
+      CandidateIntMap idx -> go $ case IM.splitLookup a idx of
         (l,e,g) -> (if lt then F.toList l else []) ++ (if eq then F.toList e else []) ++ (if gt then F.toList g else [])
     | otherwise = f EmptyTable <&> mappend r -- no match
     where
@@ -463,9 +536,26 @@ instance With (Key Supplemental t) t where
   with ky cmp a f r@(Table m)
     | lt && eq && gt = f r -- all rows
     | not lt && eq && not gt = case ixTab m ky of
-      SupplementalIndex idx -> go $ idx^..ix a.folded
+      SupplementalMap idx -> go $ idx^..ix a.folded
     | lt || eq || gt = go $ case ixTab m ky of
-      SupplementalIndex idx -> case M.splitLookup a idx of
+      SupplementalMap idx -> case M.splitLookup a idx of
+        (l,e,g) -> (if lt then F.concat l else []) ++ (if eq then F.concat e else []) ++ (if gt then F.concat g else [])
+    | otherwise      = f EmptyTable <&> mappend r -- no match
+    where
+        lt = cmp LT EQ
+        eq = cmp EQ EQ
+        gt = cmp GT EQ
+        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+  {-# INLINE with #-}
+
+instance With (Key SupplementalInt t) t where
+  with _   _   _ f EmptyTable  = f EmptyTable
+  with ky cmp a f r@(Table m)
+    | lt && eq && gt = f r -- all rows
+    | not lt && eq && not gt = case ixTab m ky of
+      SupplementalIntMap idx -> go $ idx^..ix a.folded
+    | lt || eq || gt = go $ case ixTab m ky of
+      SupplementalIntMap idx -> case IM.splitLookup a idx of
         (l,e,g) -> (if lt then F.concat l else []) ++ (if eq then F.concat e else []) ++ (if gt then F.concat g else [])
     | otherwise      = f EmptyTable <&> mappend r -- no match
     where
@@ -484,16 +574,22 @@ fromList = foldl' (flip insert) empty
 
 -- | Value-level key types
 data KeyType t a where
-  Primary      :: Ord a => KeyType Primary a
-  Candidate    :: Ord a => KeyType Candidate a
-  Supplemental :: Ord a => KeyType Supplemental a
-  Inverted     :: Ord a => KeyType Inverted [a]
+  Primary         :: Ord a => KeyType Primary a
+  Candidate       :: Ord a => KeyType Candidate a
+  CandidateInt    ::          KeyType CandidateInt Int
+  Supplemental    :: Ord a => KeyType Supplemental a
+  SupplementalInt ::          KeyType SupplementalInt Int
+  Inverted        :: Ord a => KeyType Inverted [a]
+  InvertedInt     ::          KeyType InvertedInt [Int]
 
 -- |  Type level key types
 data Primary
 data Candidate
+data CandidateInt
 data Supplemental
+data SupplementalInt
 data Inverted
+data InvertedInt
 
 class IsKeyType k a where
   keyType :: Key k t a -> KeyType k a
@@ -506,12 +602,24 @@ instance Ord a => IsKeyType Candidate a where
   keyType _ = Candidate
   {-# INLINE keyType #-}
 
+instance a ~ Int => IsKeyType CandidateInt a where
+  keyType _ = CandidateInt
+  {-# INLINE keyType #-}
+
 instance Ord a => IsKeyType Supplemental a where
   keyType _ = Supplemental
   {-# INLINE keyType #-}
 
+instance a ~ Int => IsKeyType SupplementalInt a where
+  keyType _ = SupplementalInt
+  {-# INLINE keyType #-}
+
 instance Ord a => IsKeyType Inverted [a] where
   keyType _ = Inverted
+  {-# INLINE keyType #-}
+
+instance a ~ [Int] => IsKeyType InvertedInt a where
+  keyType _ = InvertedInt
   {-# INLINE keyType #-}
 
 class HasValue p q f s t a b | s -> a, t -> b, s b -> t, t a -> s where
