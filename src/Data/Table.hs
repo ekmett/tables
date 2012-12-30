@@ -60,9 +60,9 @@ module Data.Table
   , IsKeyType(..)
   , KeyType(..)
   , Primary
-  , Candidate, CandidateInt
-  , Supplemental, SupplementalInt
-  , Inverted, InvertedInt
+  , Candidate, CandidateInt, CandidateHash
+  , Supplemental, SupplementalInt, SupplementalHash
+  , Inverted, InvertedInt, InvertedHash
   , Index(..)
   ) where
 
@@ -79,12 +79,17 @@ import Data.Functor.Identity
 import Data.Hashable
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
+import Data.HashSet (HashSet)
+import qualified Data.HashSet as HS
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
+import Data.IntSet (IntSet)
+import qualified Data.IntSet as IS
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
+import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Traversable
 import qualified Prelude as P
@@ -147,9 +152,9 @@ data Index t k a where
   CandidateIntMap     ::                       IntMap t           -> Index t CandidateInt     Int
   CandidateHashMap    :: (Eq a, Hashable a) => HashMap a t        -> Index t CandidateHash    a
   CandidateMap        :: Ord a              => Map a t            -> Index t Candidate        a
-  InvertedIntMap      ::                       IntMap [t]         -> Index t InvertedInt      [Int]
-  InvertedHashMap     :: (Eq a, Hashable a) => HashMap a [t]      -> Index t InvertedHash     [a]
-  InvertedMap         :: Ord a              => Map a [t]          -> Index t Inverted         [a]
+  InvertedIntMap      ::                       IntMap [t]         -> Index t InvertedInt      IntSet
+  InvertedHashMap     :: (Eq a, Hashable a) => HashMap a [t]      -> Index t InvertedHash     (HashSet a)
+  InvertedMap         :: Ord a              => Map a [t]          -> Index t Inverted         (Set a)
   SupplementalIntMap  ::                       IntMap [t]         -> Index t SupplementalInt  Int
   SupplementalHashMap :: (Eq a, Hashable a) => HashMap a [t]      -> Index t SupplementalHash a
   SupplementalMap     :: Ord a              => Map a [t]          -> Index t Supplemental     a
@@ -168,8 +173,8 @@ primaryMap f t = case ixTab t primary of
 -- Table
 ------------------------------------------------------------------------------
 
--- | Every 'Table' has a 'Primary' 'key' and may have 'Candidate' or
--- 'Supplemental' keys.
+-- | Every 'Table' has a 'Primary' 'key' and may have 'Candidate',
+-- 'Supplemental' or 'Inverted' keys, plus their variants.
 data Table t where
   EmptyTable ::                                 Table t
   Table      :: Tabular t => Tab t (Index t) -> Table t
@@ -247,11 +252,11 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   SupplementalHashMap idx -> SupplementalHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
-  InvertedMap idx         -> InvertedMap     $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
+  InvertedMap idx         -> InvertedMap     $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- S.toList $ fetch k t ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
-  InvertedIntMap idx      -> InvertedIntMap  $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
+  InvertedIntMap idx      -> InvertedIntMap  $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (f, [t]) | t <- ts, f <- IS.toList $ fetch k t ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
-  InvertedHashMap idx     -> InvertedHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (f, [t]) | t <- ts, f <- fetch k t ] $ \m ky ys ->
+  InvertedHashMap idx     -> InvertedHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (f, [t]) | t <- ts, f <- HS.toList $ fetch k t ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
 
 {-# INLINE deleteCollisions #-}
@@ -293,9 +298,9 @@ singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k o
   Supplemental     -> SupplementalMap          $ M.singleton (fetch k row) [row]
   SupplementalInt  -> SupplementalIntMap       $ IM.singleton (fetch k row) [row]
   SupplementalHash -> SupplementalHashMap      $ HM.singleton (fetch k row) [row]
-  Inverted         -> InvertedMap              $ M.fromList  $ zip (fetch k row) (repeat [row])
-  InvertedInt      -> InvertedIntMap           $ IM.fromList $ zip (fetch k row) (repeat [row])
-  InvertedHash     -> InvertedHashMap          $ HM.fromList $ zip (fetch k row) (repeat [row])
+  Inverted         -> InvertedMap              $ M.fromSet (const [row]) (fetch k row)
+  InvertedInt      -> InvertedIntMap           $ IM.fromSet (const [row]) (fetch k row)
+  InvertedHash     -> InvertedHashMap          $ HS.foldl' (\m k -> HM.insert k [row] m) HM.empty (fetch k row) -- if unordered-containers ever gives us HM.fromSet, change this
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
@@ -334,7 +339,7 @@ insert t0 r = case autoTab t0 of
       SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon [] P.null %~ (t:)
       SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon [] P.null %~ (t:)
       InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
-      InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+      InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
       InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
   {-# INLINE go #-}
 {-# INLINE insert #-}
@@ -425,35 +430,35 @@ instance Applicative f => Group f (Key SupplementalHash t a) t a where
     SupplementalHashMap idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (HM.toList idx) <&> mconcat
   {-# INLINE group #-}
 
-instance (Applicative f, Gettable f) => Group f (Key Inverted t [a]) t a where
+instance (Applicative f, Gettable f) => Group f (Key Inverted t (Set a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
 
-instance (Applicative f, Gettable f, a ~ Int) => Group f (Key InvertedInt t [a]) t a where
+instance (Applicative f, Gettable f, a ~ Int) => Group f (Key InvertedInt t IntSet) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedIntMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ IM.toList idx
 
-instance (Applicative f, Gettable f) => Group f (Key InvertedHash t [a]) t a where
+instance (Applicative f, Gettable f) => Group f (Key InvertedHash t (HashSet a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedHashMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ HM.toList idx
 
 -- | Search inverted indices
-class Withal q t | q -> t where
-  withAny :: Ord a => q [a] -> [a] -> Lens' (Table t) (Table t)
-  withAll :: Ord a => q [a] -> [a] -> Lens' (Table t) (Table t)
+class Withal q s t | q -> s t where
+  withAny :: q -> s -> Lens' (Table t) (Table t)
+  withAll ::q -> s -> Lens' (Table t) (Table t)
 
-  deleteWithAny :: Ord a => q [a] -> [a] -> Table t -> Table t
+  deleteWithAny :: q -> s -> Table t -> Table t
   deleteWithAny p as t = set (withAny p as) empty t
   {-# INLINE deleteWithAny #-}
 
-  deleteWithAll :: Ord a => q [a] -> [a] -> Table t -> Table t
+  deleteWithAll :: q -> s -> Table t -> Table t
   deleteWithAll p as t = set (withAll p as) empty t
   {-# INLINE deleteWithAll #-}
 
-instance Withal ((->) t) t where
+instance Ord a => Withal (t -> [a]) [a] t where
   withAny _ _  f EmptyTable  = f EmptyTable
   withAny k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.any (\e -> ss^.ix e) . k)
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
@@ -466,7 +471,7 @@ instance Withal ((->) t) t where
           ss = S.fromList as
   {-# INLINE withAll #-}
 
-instance Withal (Key Inverted t) t where
+instance Ord a => Withal (Key Inverted t (Set a)) [a] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedMap idx -> as >>= \a -> idx^..ix a.folded
@@ -481,7 +486,7 @@ instance Withal (Key Inverted t) t where
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
-instance Withal (Key InvertedInt t) t where
+instance Withal (Key InvertedInt t (IntSet)) [Int] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedIntMap idx -> as >>= \a -> idx^..ix a.folded
@@ -496,7 +501,7 @@ instance Withal (Key InvertedInt t) t where
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
-instance Withal (Key InvertedHash t) t where
+instance (Eq a, Hashable a) =>Withal (Key InvertedHash t (HashSet a)) [a] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedHashMap idx -> as >>= \a -> idx^..ix a.folded
@@ -663,9 +668,9 @@ data KeyType t a where
   Supplemental     :: Ord a              => KeyType Supplemental     a
   SupplementalInt  ::                       KeyType SupplementalInt  Int
   SupplementalHash :: (Eq a, Hashable a) => KeyType SupplementalHash a
-  Inverted         :: Ord a              => KeyType Inverted         [a]
-  InvertedInt      ::                       KeyType InvertedInt      [Int]
-  InvertedHash     :: (Eq a, Hashable a) => KeyType InvertedHash     [a]
+  Inverted         :: Ord a              => KeyType Inverted         (Set a)
+  InvertedInt      ::                       KeyType InvertedInt      IntSet
+  InvertedHash     :: (Eq a, Hashable a) => KeyType InvertedHash     (HashSet a)
 
 -- |  Type level key types
 data Primary
@@ -710,15 +715,15 @@ instance (Eq a, Hashable a)=> IsKeyType SupplementalHash a where
   keyType _ = SupplementalHash
   {-# INLINE keyType #-}
 
-instance Ord a => IsKeyType Inverted [a] where
+instance Ord a => IsKeyType Inverted (Set a) where
   keyType _ = Inverted
   {-# INLINE keyType #-}
 
-instance a ~ [Int] => IsKeyType InvertedInt a where
+instance a ~ [Int] => IsKeyType InvertedInt IntSet where
   keyType _ = InvertedInt
   {-# INLINE keyType #-}
 
-instance (Eq a, Hashable a)=> IsKeyType InvertedHash [a] where
+instance (Eq a, Hashable a)=> IsKeyType InvertedHash (HashSet a) where
   keyType _ = InvertedHash
   {-# INLINE keyType #-}
 
