@@ -14,7 +14,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE CPP #-}
 {-# OPTIONS_GHC -fno-warn-name-shadowing #-}
+
+#ifndef MIN_VERSION_containers
+#define MIN_VERSION_containers(x,y,z) 1
+#endif
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Table
@@ -291,16 +296,21 @@ null (Table m)  = M.null (m^.primaryMap)
 -- | Construct a relation with a single row
 singleton :: Tabular t => t -> Table t
 singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k of
-  Primary          -> primarily k $ PrimaryMap $ M.singleton (fetch k row) row
-  Candidate        -> CandidateMap             $ M.singleton (fetch k row) row
+  Primary          -> primarily k $ PrimaryMap $ M.singleton  (fetch k row) row
+  Candidate        -> CandidateMap             $ M.singleton  (fetch k row) row
   CandidateInt     -> CandidateIntMap          $ IM.singleton (fetch k row) row
   CandidateHash    -> CandidateHashMap         $ HM.singleton (fetch k row) row
-  Supplemental     -> SupplementalMap          $ M.singleton (fetch k row) [row]
+  Supplemental     -> SupplementalMap          $ M.singleton  (fetch k row) [row]
   SupplementalInt  -> SupplementalIntMap       $ IM.singleton (fetch k row) [row]
   SupplementalHash -> SupplementalHashMap      $ HM.singleton (fetch k row) [row]
-  Inverted         -> InvertedMap              $ M.fromSet (const [row]) (fetch k row)
+#if MIN_VERSION_containers(0,5,0)
+  Inverted         -> InvertedMap              $ M.fromSet  (const [row]) (fetch k row)
   InvertedInt      -> InvertedIntMap           $ IM.fromSet (const [row]) (fetch k row)
-  InvertedHash     -> InvertedHashMap          $ HS.foldl' (\m k -> HM.insert k [row] m) HM.empty (fetch k row) -- if unordered-containers ever gives us HM.fromSet, change this
+#else
+  Inverted         -> InvertedMap              $ M.fromDistinctAscList  [ (e, [row]) | e <- S.toAscList  (fetch k row) ]
+  InvertedInt      -> InvertedIntMap           $ IM.fromDistinctAscList [ (e, [row]) | e <- IS.toAscList (fetch k row) ]
+#endif
+  InvertedHash     -> InvertedHashMap          $ HS.foldl' (\m k -> HM.insert k [row] m) HM.empty (fetch k row)
 {-# INLINE singleton #-}
 
 -- | Return the set of rows that would be delete by deleting or inserting this row
