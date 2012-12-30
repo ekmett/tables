@@ -173,8 +173,8 @@ primaryMap f t = case ixTab t primary of
 -- Table
 ------------------------------------------------------------------------------
 
--- | Every 'Table' has a 'Primary' 'key' and may have 'Candidate' or
--- 'Supplemental' keys.
+-- | Every 'Table' has a 'Primary' 'key' and may have 'Candidate',
+-- 'Supplemental' or 'Inverted' keys, plus their variants.
 data Table t where
   EmptyTable ::                                 Table t
   Table      :: Tabular t => Tab t (Index t) -> Table t
