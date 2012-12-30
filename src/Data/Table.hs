@@ -60,9 +60,9 @@ module Data.Table
   , IsKeyType(..)
   , KeyType(..)
   , Primary
-  , Candidate, CandidateInt
-  , Supplemental, SupplementalInt
-  , Inverted, InvertedInt
+  , Candidate, CandidateInt, CandidateHash
+  , Supplemental, SupplementalInt, SupplementalHash
+  , Inverted, InvertedInt, InvertedHash
   , Index(..)
   ) where
 
