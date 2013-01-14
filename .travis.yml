@@ -1,17 +1,17 @@
 language: haskell
 before_install:
   # Uncomment whenever hackage is down.
-  # - mkdir -p ~/.cabal && cp config ~/.cabal/config && cabal update
+  # - mkdir -p ~/.cabal && cp travis/config ~/.cabal/config && cabal update
 
   # grab lens 3.8
   - git clone https://github.com/ekmett/lens.git
   - cd lens
-  - ./travis-cabal-apt-install --only-dependencies --force-reinstall
+  - travis/cabal-apt-install --only-dependencies --force-reinstall
   - cabal install
   - cd ..
 
   # Try installing some of the build-deps with apt-get for speed.
-  - ./travis-cabal-apt-install --only-dependencies --force-reinstall $mode
+  - travis/cabal-apt-install --only-dependencies --force-reinstall $mode
 
 install:
   - cabal configure $mode
