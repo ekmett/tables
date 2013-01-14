@@ -74,7 +74,6 @@ module Data.Table
 import Control.Applicative hiding (empty)
 import Control.Comonad
 import Control.Lens
-import Control.Lens.Internal
 import Control.Monad
 import Control.Monad.Fix
 import Data.Data
@@ -390,7 +389,7 @@ rows f r = P.foldr insert empty <$> traverse f (toList r)
 
 class Group f q t i | q -> t i where
   -- | Group by a given key or arbitrary function.
-  group :: (Indexable i p, Ord i) => q -> IndexedLensLike' p f (Table t) (Table t)
+  group :: Ord i => q -> IndexedLensLike' i f (Table t) (Table t)
 
 instance Applicative f => Group f (t -> a) t a where
   group _  _ EmptyTable = pure EmptyTable
