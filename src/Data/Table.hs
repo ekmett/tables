@@ -74,6 +74,7 @@ import Control.Applicative hiding (empty)
 import Control.Comonad
 import Control.Lens
 import Control.Monad
+import Control.Monad.Fix
 import Data.Data
 import Data.Foldable as F
 import Data.Function (on)
@@ -826,10 +827,68 @@ instance Ord a => Tabular (Identity a) where
   type PKT (Identity a) = a
   data Tab (Identity a) i = IdentityTab (i Primary a)
   data Key p (Identity a) b where
-    Val :: Key Primary (Identity a) a
+    Id :: Key Primary (Identity a) a
+  fetch Id = extract
+  primary = Id
+  primarily Id r = r
+  mkTab f = IdentityTab <$> f Id
+  ixTab (IdentityTab x) Id = x
+  forTab (IdentityTab x) f = IdentityTab <$> f Id x
+
+-----------------------------------------------------------------------------
+-- A simple value for set-like tables.
+-----------------------------------------------------------------------------
+
+instance Field1 (Value a) (Value b) a b where
+  _1 f (Value a) = Value <$> indexed f (0 :: Int) a
+
+type instance Index (Value a) = ()
+type instance IxValue (Value a) = a
+
+instance Functor f => Each f (Value a) (Value b) a b where
+  each f (Value a) = Value <$> indexed f () a
+
+instance Gettable f => Contains f (Value a) where
+  contains () pafb _ = coerce (indexed pafb () True)
+
+instance Functor f => Ixed f (Value a) where
+  ix () pafb (Value a) = Value <$> indexed pafb () a
+
+instance Wrapped a b (Value a) (Value b) where
+  wrapped = iso Value $ \(Value a) -> a
+
+data Value a = Value a
+  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
+
+instance Applicative Value where
+  pure = Value
+  Value f <*> Value a = Value (f a)
+
+instance Monad Value where
+  return = Value
+  Value a >>= f = f a
+
+instance MonadFix Value where
+  mfix f = let m = f (extract m) in m
+
+instance Comonad Value where
+  extract (Value a) = a
+  extend f w@(Value _) = Value (f w)
+
+instance ComonadApply Value where
+  Value f <@> Value a = Value (f a)
+
+instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
+   value = unwrapped
+
+instance Ord a => Tabular (Value a) where
+  type PKT (Value a) = a
+  data Tab (Value a) i = ValueTab (i Primary a)
+  data Key p (Value a) b where
+    Val :: Key Primary (Value a) a
   fetch Val = extract
   primary = Val
   primarily Val r = r
-  mkTab f = IdentityTab <$> f Val
-  ixTab (IdentityTab x) Val = x
-  forTab (IdentityTab x) f = IdentityTab <$> f Val x
+  mkTab f = ValueTab <$> f Val
+  ixTab (ValueTab x) Val = x
+  forTab (ValueTab x) f = ValueTab <$> f Val x
