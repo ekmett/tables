@@ -229,7 +229,7 @@ instance Foldable Table where
   {-# INLINE foldMap #-}
 
 type instance Index (Table t) = PKT t
-type instance Value (Table t) = t
+type instance IxValue (Table t) = t
 
 instance Gettable f => Contains f (Table t) where
   contains k f EmptyTable = coerce $ indexed f k False
