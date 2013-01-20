@@ -59,7 +59,6 @@ module Data.Table
   , Auto(..)
   , autoKey
   , auto
-  , Value(..)
   , autoIncrement
   -- * Implementation Details
   , IsKeyType(..)
@@ -68,14 +67,13 @@ module Data.Table
   , Candidate, CandidateInt, CandidateHash
   , Supplemental, SupplementalInt, SupplementalHash
   , Inverted, InvertedInt, InvertedHash
-  , Index(..)
+  , AnIndex(..)
   ) where
 
 import Control.Applicative hiding (empty)
 import Control.Comonad
 import Control.Lens
 import Control.Monad
-import Control.Monad.Fix
 import Data.Data
 import Data.Foldable as F
 import Data.Function (on)
@@ -132,7 +130,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   forTab :: Applicative h => Tab t i -> (forall k a . IsKeyType k a => Key k t a -> i k a -> h (j k a)) -> h (Tab t j)
 
   -- | Adjust a record using meta-information about the table allowing for auto-increments.
-  autoTab :: t -> Maybe (Tab t (Index t) -> t)
+  autoTab :: t -> Maybe (Tab t (AnIndex t) -> t)
   autoTab _ = Nothing
   {-# INLINE autoTab #-}
 
@@ -144,27 +142,27 @@ class Ord (PKT t) => Tabular (t :: *) where
 -- To enable auto-increment for a table with primary key @primaryKeyField@, set:
 --
 -- @'autoKey' = 'autoIncrement' primaryKeyField@
-autoIncrement :: (Tabular t, PKT t ~ Int) => ALens' t Int -> t -> Maybe (Tab t (Index t) -> t)
+autoIncrement :: (Tabular t, PKT t ~ Int) => ALens' t Int -> t -> Maybe (Tab t (AnIndex t) -> t)
 autoIncrement pk t
   | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb ^? primaryMap.traverseMax.asIndex)
   | otherwise    = Nothing
 {-# INLINE autoIncrement #-}
 
 -- | This is used to store a single index.
-data Index t k a where
-  PrimaryMap          ::                       Map (PKT t) t      -> Index t Primary          a
-  CandidateIntMap     ::                       IntMap t           -> Index t CandidateInt     Int
-  CandidateHashMap    :: (Eq a, Hashable a) => HashMap a t        -> Index t CandidateHash    a
-  CandidateMap        :: Ord a              => Map a t            -> Index t Candidate        a
-  InvertedIntMap      ::                       IntMap [t]         -> Index t InvertedInt      IntSet
-  InvertedHashMap     :: (Eq a, Hashable a) => HashMap a [t]      -> Index t InvertedHash     (HashSet a)
-  InvertedMap         :: Ord a              => Map a [t]          -> Index t Inverted         (Set a)
-  SupplementalIntMap  ::                       IntMap [t]         -> Index t SupplementalInt  Int
-  SupplementalHashMap :: (Eq a, Hashable a) => HashMap a [t]      -> Index t SupplementalHash a
-  SupplementalMap     :: Ord a              => Map a [t]          -> Index t Supplemental     a
+data AnIndex t k a where
+  PrimaryMap          ::                       Map (PKT t) t      -> AnIndex t Primary          a
+  CandidateIntMap     ::                       IntMap t           -> AnIndex t CandidateInt     Int
+  CandidateHashMap    :: (Eq a, Hashable a) => HashMap a t        -> AnIndex t CandidateHash    a
+  CandidateMap        :: Ord a              => Map a t            -> AnIndex t Candidate        a
+  InvertedIntMap      ::                       IntMap [t]         -> AnIndex t InvertedInt      IntSet
+  InvertedHashMap     :: (Eq a, Hashable a) => HashMap a [t]      -> AnIndex t InvertedHash     (HashSet a)
+  InvertedMap         :: Ord a              => Map a [t]          -> AnIndex t Inverted         (Set a)
+  SupplementalIntMap  ::                       IntMap [t]         -> AnIndex t SupplementalInt  Int
+  SupplementalHashMap :: (Eq a, Hashable a) => HashMap a [t]      -> AnIndex t SupplementalHash a
+  SupplementalMap     :: Ord a              => Map a [t]          -> AnIndex t Supplemental     a
 
 -- | Find the primary key index a tab
-primaryMap :: Tabular t => Lens' (Tab t (Index t)) (Map (PKT t) t)
+primaryMap :: Tabular t => Lens' (Tab t (AnIndex t)) (Map (PKT t) t)
 primaryMap f t = case ixTab t primary of
   PrimaryMap m -> f m <&> \u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
     PrimaryMap _ -> primarily k (PrimaryMap u)
@@ -180,8 +178,8 @@ primaryMap f t = case ixTab t primary of
 -- | Every 'Table' has a 'Primary' 'key' and may have 'Candidate',
 -- 'Supplemental' or 'Inverted' keys, plus their variants.
 data Table t where
-  EmptyTable ::                                 Table t
-  Table      :: Tabular t => Tab t (Index t) -> Table t
+  EmptyTable ::                                   Table t
+  Table      :: Tabular t => Tab t (AnIndex t) -> Table t
   deriving Typeable
 
 instance (Tabular t, Data t) => Data (Table t) where
@@ -230,8 +228,12 @@ instance Foldable Table where
   foldMap f (Table m)  = foldMapOf (primaryMap.folded) f m
   {-# INLINE foldMap #-}
 
-type instance IxKey (Table t) = PKT t
-type instance IxValue (Table t) = t
+type instance Index (Table t) = PKT t
+type instance Value (Table t) = t
+
+instance Gettable f => Contains f (Table t) where
+  contains k f EmptyTable = coerce $ indexed f k False
+  contains k f (Table m) = Table <$> primaryMap (contains k f) m
 
 instance Applicative f => Ixed f (Table t) where
   ix _ _ EmptyTable = pure EmptyTable
@@ -265,7 +267,7 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
 
 {-# INLINE deleteCollisions #-}
 
-emptyTab :: Tabular t => Tab t (Index t)
+emptyTab :: Tabular t => Tab t (AnIndex t)
 emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
   Primary          -> primarily k (PrimaryMap M.empty)
   Candidate        -> CandidateMap        M.empty
@@ -372,7 +374,7 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
-instance (Tabular b, Applicative f, i ~ PKT a) => Each i f (Table a) (Table b) a b where
+instance (Tabular b, Applicative f, PKT a ~ PKT b) => Each f (Table a) (Table b) a b where
   each _ EmptyTable = pure EmptyTable
   each f (Table m)  = P.foldr insert empty <$> sequenceA (M.foldrWithKey (\i a r -> indexed f i a : r) [] $ m^.primaryMap)
 
@@ -469,13 +471,13 @@ class Withal q s t | q -> s t where
 
 instance Ord a => Withal (t -> [a]) [a] t where
   withAny _ _  f EmptyTable  = f EmptyTable
-  withAny k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.any (\e -> ss^.ix e) . k)
+  withAny k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.any (\e -> ss^.contains e) . k)
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
           ss = S.fromList as
   {-# INLINE withAny #-}
 
   withAll _ _  f EmptyTable  = f EmptyTable
-  withAll k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.all (\e -> ss^.ix e) . k)
+  withAll k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.all (\e -> ss^.contains e) . k)
     where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
           ss = S.fromList as
   {-# INLINE withAll #-}
@@ -753,7 +755,9 @@ instance Field1 (Auto a) (Auto a) Int Int where
 instance Field2 (Auto a) (Auto b) a b where
   _2 f (Auto k a) = indexed f (1 :: Int) a <&> Auto k
 
-instance (a ~ Int, b ~ Int, Applicative f) => Each Int f (Auto a) (Auto b) a b where
+type instance Index (Auto a) = Int
+
+instance (a ~ Int, b ~ Int, Applicative f) => Each f (Auto a) (Auto b) a b where
   each f (Auto k a) = Auto <$> indexed f (0 :: Int) k <*> indexed f (1 :: Int) a
 
 data Auto a = Auto !Int a
@@ -812,50 +816,20 @@ instance Ord k => Tabular (k,v) where
   forTab (KVTab x) f = KVTab <$> f Fst x
 
 ------------------------------------------------------------------------------
--- A simple value for set-like tables.
+-- Set-like tables with Identity
 ------------------------------------------------------------------------------
 
-instance Field1 (Value a) (Value b) a b where
-  _1 f (Value a) = Value <$> indexed f (0 :: Int) a
-
-instance Functor f => Each Int f (Value a) (Value b) a b where
-  each f (Value a) = Value <$> indexed f (0 :: Int) a
-
-instance Wrapped a b (Value a) (Value b) where
-  wrapped = iso Value $ \(Value a) -> a
-
-data Value a = Value a
-  deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
-
-instance Applicative Value where
-  pure = Value
-  Value f <*> Value a = Value (f a)
-
-instance Monad Value where
-  return = Value
-  Value a >>= f = f a
-
-instance MonadFix Value where
-  mfix f = let m = f (extract m) in m
-
-instance Comonad Value where
-  extract (Value a) = a
-  extend f w@(Value _) = Value (f w)
-
-instance ComonadApply Value where
-  Value f <@> Value a = Value (f a)
-
-instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
+instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Identity a) (Identity b) a b where
   value = unwrapped
 
-instance Ord a => Tabular (Value a) where
-  type PKT (Value a) = a
-  data Tab (Value a) i = ValueTab (i Primary a)
-  data Key p (Value a) b where
-    Val :: Key Primary (Value a) a
+instance Ord a => Tabular (Identity a) where
+  type PKT (Identity a) = a
+  data Tab (Identity a) i = IdentityTab (i Primary a)
+  data Key p (Identity a) b where
+    Val :: Key Primary (Identity a) a
   fetch Val = extract
   primary = Val
   primarily Val r = r
-  mkTab f = ValueTab <$> f Val
-  ixTab (ValueTab x) Val = x
-  forTab (ValueTab x) f = ValueTab <$> f Val x
+  mkTab f = IdentityTab <$> f Val
+  ixTab (IdentityTab x) Val = x
+  forTab (IdentityTab x) f = IdentityTab <$> f Val x
