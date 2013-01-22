@@ -42,14 +42,14 @@ flag transformers2
 
 library
   build-depends:
-    base                 >= 4.3      && < 5,
-    comonad              >= 3,
-    containers           >= 0.4.0    && < 0.6,
-    hashable             >= 1.1      && < 1.3,
-    lens                 >= 3.8,
-    profunctors          >= 3.2,
-    transformers         >= 0.2      && < 0.4,
-    transformers-compat  >= 0.1,
+    base                 >= 4.3 && < 5,
+    comonad              >= 3   && < 4,
+    containers           >= 0.4 && < 0.6,
+    hashable             >= 1.1 && < 1.3,
+    lens                 >= 3.8 && < 4,
+    profunctors          >= 3.2 && < 4,
+    transformers         >= 0.2 && < 0.4,
+    transformers-compat  >= 0.1 && < 1,
     unordered-containers == 0.2.*
 
   exposed-modules:
