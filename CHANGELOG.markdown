@@ -1,3 +1,4 @@
 0.1
 ---
-* Repository Initialized
+* Initial public release
+* Repository initialized

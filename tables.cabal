@@ -9,9 +9,12 @@ maintainer:    Edward A. Kmett <ekmett@gmail.com>
 stability:     provisional
 homepage:      http://github.com/ekmett/tables/
 bug-reports:   http://github.com/ekmett/tables/issues
-copyright:     Copyright (C) 2012 Edward A. Kmett
-synopsis:      In-memory storage with multiple keys using lenses
-description:   In-memory storage with multiple keys using lenses
+copyright:     Copyright (C) 2012-2013 Edward A. Kmett
+synopsis:      In-memory storage with multiple keys using lenses and traversals
+description:
+  In-memory storage with multiple keys using lenses and traversals
+  .
+  For a quick tour, see <https://github.com/ekmett/tables#examples>
 
 build-type:    Custom
 tested-with:   GHC == 7.4.2
