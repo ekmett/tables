@@ -23,7 +23,8 @@ extra-source-files:
   .ghci
   .gitignore
   .vim.custom
-  config
+  travis/config
+  travis/cabal-apt-install
   examples/*.hs
   README.markdown
   CHANGELOG.markdown
