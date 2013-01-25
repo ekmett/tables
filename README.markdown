@@ -8,7 +8,7 @@ This package provides simple in memory data tables with multiple indices.
 Examples
 --------
 
-So if load `examples/Foo.hs` into `ghci`, we start with:
+So if we load `examples/Foo.hs` into `ghci`, we start with:
 
 ```haskell
 >>> test
