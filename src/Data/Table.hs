@@ -727,15 +727,15 @@ instance (Eq a, Hashable a)=> IsKeyType SupplementalHash a where
   keyType _ = SupplementalHash
   {-# INLINE keyType #-}
 
-instance Ord a => IsKeyType Inverted (Set a) where
+instance (t ~ Set, Ord a) => IsKeyType Inverted (t a) where
   keyType _ = Inverted
   {-# INLINE keyType #-}
 
-instance a ~ [Int] => IsKeyType InvertedInt IntSet where
+instance IsKeyType InvertedInt IntSet where
   keyType _ = InvertedInt
   {-# INLINE keyType #-}
 
-instance (Eq a, Hashable a)=> IsKeyType InvertedHash (HashSet a) where
+instance (t ~ HashSet, Eq a, Hashable a) => IsKeyType InvertedHash (t a) where
   keyType _ = InvertedHash
   {-# INLINE keyType #-}
 
