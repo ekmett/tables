@@ -749,39 +749,50 @@ class HasValue p q f s t a b | s -> a, t -> b, s b -> t, t a -> s where
 -- | Generate a row with an auto-incremented key
 auto :: a -> Auto a
 auto = Auto 0
+{-# INLINE auto #-}
 
 instance Field1 (Auto a) (Auto a) Int Int where
   _1 f (Auto k a) = indexed f (0 :: Int) k <&> \k' -> Auto k' a
+  {-# INLINE _1 #-}
 
 instance Field2 (Auto a) (Auto b) a b where
   _2 f (Auto k a) = indexed f (1 :: Int) a <&> Auto k
+  {-# INLINE _2 #-}
 
 type instance Index (Auto a) = Int
 
 instance (a ~ Int, b ~ Int, Applicative f) => Each f (Auto a) (Auto b) a b where
   each f (Auto k a) = Auto <$> indexed f (0 :: Int) k <*> indexed f (1 :: Int) a
+  {-# INLINE each #-}
 
 data Auto a = Auto !Int a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
 
 autoKey :: Lens' (Auto a) Int
 autoKey f (Auto k a) = f k <&> \k' -> Auto k' a
+{-# INLINE autoKey #-}
 
 instance (Indexable Int p, q ~ (->), Functor f) => HasValue p q f (Auto a) (Auto b) a b where
   value f (Auto k a) = indexed f k a <&> Auto k
+  {-# INLINE value #-}
 
 instance FunctorWithIndex Int Auto where
   imap f (Auto k a) = Auto k (f k a)
+  {-# INLINE imap #-}
 
 instance FoldableWithIndex Int Auto where
   ifoldMap f (Auto k a) = f k a
+  {-# INLINE ifoldMap #-}
 
 instance TraversableWithIndex Int Auto where
   itraverse f (Auto k a) = Auto k <$> f k a
+  {-# INLINE itraverse #-}
 
 instance Comonad Auto where
   extract (Auto _ a) = a
+  {-# INLINE extract #-}
   extend f w@(Auto k _) = Auto k (f w)
+  {-# INLINE extend #-}
 
 instance Tabular (Auto a) where
   type PKT (Auto a) = Int
@@ -789,12 +800,19 @@ instance Tabular (Auto a) where
   data Key p (Auto a) b where
     AutoKey :: Key Primary (Auto a) Int
   fetch AutoKey (Auto k _) = k
+  {-# INLINE fetch #-}
   primary = AutoKey
+  {-# INLINE primary #-}
   primarily AutoKey r = r
+  {-# INLINE primarily #-}
   mkTab f = AutoTab <$> f AutoKey
+  {-# INLINE mkTab #-}
   ixTab (AutoTab x) AutoKey = x
+  {-# INLINE ixTab #-}
   forTab (AutoTab x) f = AutoTab <$> f AutoKey x
+  {-# INLINE forTab #-}
   autoTab = autoIncrement autoKey
+  {-# INLINE autoTab #-}
 
 ------------------------------------------------------------------------------
 -- A simple key-value pair, indexed on the key
@@ -802,6 +820,7 @@ instance Tabular (Auto a) where
 
 instance (Indexable k p, q ~ (->), Functor f) => HasValue p q f (k, a) (k, b) a b where
   value f (k, a) = indexed f k a <&> (,) k
+  {-# INLINE value #-}
 
 -- | Simple (key, value) pairs
 instance Ord k => Tabular (k,v) where
@@ -810,11 +829,17 @@ instance Ord k => Tabular (k,v) where
   data Key p (k,v) b where
     Fst :: Key Primary (k,v) k
   fetch Fst = fst
+  {-# INLINE fetch #-}
   primary = Fst
+  {-# INLINE primary #-}
   primarily Fst r = r
+  {-# INLINE primarily #-}
   mkTab f = KVTab <$> f Fst
+  {-# INLINE mkTab #-}
   ixTab (KVTab x) Fst = x
+  {-# INLINE ixTab #-}
   forTab (KVTab x) f = KVTab <$> f Fst x
+  {-# INLINE forTab #-}
 
 ------------------------------------------------------------------------------
 -- Set-like tables with Identity
@@ -822,6 +847,7 @@ instance Ord k => Tabular (k,v) where
 
 instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Identity a) (Identity b) a b where
   value = unwrapped
+  {-# INLINE value #-}
 
 instance Ord a => Tabular (Identity a) where
   type PKT (Identity a) = a
@@ -829,11 +855,17 @@ instance Ord a => Tabular (Identity a) where
   data Key p (Identity a) b where
     Id :: Key Primary (Identity a) a
   fetch Id = extract
+  {-# INLINE fetch #-}
   primary = Id
+  {-# INLINE primary #-}
   primarily Id r = r
+  {-# INLINE primarily #-}
   mkTab f = IdentityTab <$> f Id
+  {-# INLINE mkTab #-}
   ixTab (IdentityTab x) Id = x
+  {-# INLINE ixTab #-}
   forTab (IdentityTab x) f = IdentityTab <$> f Id x
+  {-# INLINE forTab #-}
 
 -----------------------------------------------------------------------------
 -- A simple value for set-like tables.
@@ -841,45 +873,59 @@ instance Ord a => Tabular (Identity a) where
 
 instance Field1 (Value a) (Value b) a b where
   _1 f (Value a) = Value <$> indexed f (0 :: Int) a
+  {-# INLINE _1 #-}
 
 type instance Index (Value a) = ()
 type instance IxValue (Value a) = a
 
 instance Functor f => Each f (Value a) (Value b) a b where
   each f (Value a) = Value <$> indexed f () a
+  {-# INLINE each #-}
 
 instance Gettable f => Contains f (Value a) where
   contains () pafb _ = coerce (indexed pafb () True)
+  {-# INLINE contains #-}
 
 instance Functor f => Ixed f (Value a) where
   ix () pafb (Value a) = Value <$> indexed pafb () a
+  {-# INLINE ix #-}
 
 instance Wrapped a b (Value a) (Value b) where
   wrapped = iso Value $ \(Value a) -> a
+  {-# INLINE wrapped #-}
 
 data Value a = Value a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
 
 instance Applicative Value where
   pure = Value
+  {-# INLINE pure #-}
   Value f <*> Value a = Value (f a)
+  {-# INLINE (<*>) #-}
 
 instance Monad Value where
   return = Value
+  {-# INLINE return #-}
   Value a >>= f = f a
+  {-# INLINE (>>=) #-}
 
 instance MonadFix Value where
   mfix f = let m = f (extract m) in m
+  {-# INLINE mfix #-}
 
 instance Comonad Value where
   extract (Value a) = a
+  {-# INLINE extract #-}
   extend f w@(Value _) = Value (f w)
+  {-# INLINE extend #-}
 
 instance ComonadApply Value where
   Value f <@> Value a = Value (f a)
+  {-# INLINE (<@>) #-}
 
 instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
-   value = unwrapped
+  value = unwrapped
+  {-# INLINE value #-}
 
 instance Ord a => Tabular (Value a) where
   type PKT (Value a) = a
@@ -887,8 +933,14 @@ instance Ord a => Tabular (Value a) where
   data Key p (Value a) b where
     Val :: Key Primary (Value a) a
   fetch Val = extract
+  {-# INLINE fetch #-}
   primary = Val
+  {-# INLINE primary #-}
   primarily Val r = r
+  {-# INLINE primarily #-}
   mkTab f = ValueTab <$> f Val
+  {-# INLINE mkTab #-}
   ixTab (ValueTab x) Val = x
+  {-# INLINE ixTab #-}
   forTab (ValueTab x) f = ValueTab <$> f Val x
+  {-# INLINE forTab #-}
