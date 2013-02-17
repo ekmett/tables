@@ -143,7 +143,7 @@ class Ord (PKT t) => Tabular (t :: *) where
 -- To enable auto-increment for a table with primary key @primaryKeyField@, set:
 --
 -- @'autoKey' = 'autoIncrement' primaryKeyField@
-autoIncrement :: (Tabular t, PKT t ~ Int) => ALens' t Int -> t -> Maybe (Tab t (AnIndex t) -> t)
+autoIncrement :: (Tabular t, Num (PKT t)) => ALens' t (PKT t) -> t -> Maybe (Tab t (AnIndex t) -> t)
 autoIncrement pk t
   | t ^# pk == 0 = Just $ \ tb -> t & pk #~ 1 + fromMaybe 0 (tb ^? primaryMap.traverseMax.asIndex)
   | otherwise    = Nothing
