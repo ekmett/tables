@@ -52,6 +52,7 @@ module Data.Table
   , Withal(..)
   , Group(..)
   , insert
+  , insert'
   , delete
   , rows
   , rows'
@@ -334,13 +335,17 @@ delete t m = deleteCollisions m (collisions t m)
 
 -- | Insert a row into a relation, removing collisions.
 insert :: Tabular t => t -> Table t -> Table t
-insert t0 r = case autoTab t0 of
+insert t r = snd $ insert' t r
+
+-- | Insert a row into a relation, removing collisions.
+insert' :: Tabular t => t -> Table t -> (t, Table t)
+insert' t0 r = case autoTab t0 of
   Just p -> case r of
     EmptyTable -> go (p emptyTab)
     Table m    -> go (p m)
   Nothing -> go t0
   where
-  go t = case delete t r of
+  go t = (,) t $ case delete t r of
     EmptyTable -> singleton t
     Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
       PrimaryMap idx          -> primarily k $ PrimaryMap $ idx & at (fetch k t) ?~ t
