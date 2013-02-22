@@ -232,7 +232,7 @@ instance Foldable Table where
 type instance Index (Table t) = PKT t
 type instance IxValue (Table t) = t
 
-instance (Functor f, Contravariant f) => Contains f (Table t) where
+instance Gettable f => Contains f (Table t) where
   contains k f EmptyTable = coerce $ indexed f k False
   contains k f (Table m) = Table <$> primaryMap (contains k f) m
 
@@ -442,17 +442,17 @@ instance Applicative f => Group f (Key SupplementalHash t a) t a where
     SupplementalHashMap idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (HM.toList idx) <&> mconcat
   {-# INLINE group #-}
 
-instance (Applicative f, Contravariant f) => Group f (Key Inverted t (Set a)) t a where
+instance (Applicative f, Gettable f) => Group f (Key Inverted t (Set a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
 
-instance (Applicative f, Contravariant f, a ~ Int) => Group f (Key InvertedInt t IntSet) t a where
+instance (Applicative f, Gettable f, a ~ Int) => Group f (Key InvertedInt t IntSet) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedIntMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ IM.toList idx
 
-instance (Applicative f, Contravariant f) => Group f (Key InvertedHash t (HashSet a)) t a where
+instance (Applicative f, Gettable f) => Group f (Key InvertedHash t (HashSet a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedHashMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ HM.toList idx
@@ -882,7 +882,7 @@ instance Functor f => Each f (Value a) (Value b) a b where
   each f (Value a) = Value <$> indexed f () a
   {-# INLINE each #-}
 
-instance (Functor f, Contravariant f) => Contains f (Value a) where
+instance Gettable f => Contains f (Value a) where
   contains () pafb _ = coerce (indexed pafb () True)
   {-# INLINE contains #-}
 
