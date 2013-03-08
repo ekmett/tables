@@ -44,8 +44,8 @@ flag transformers2
 library
   build-depends:
     base                 >= 4.3 && < 5,
-    binary,
-    cereal,
+    binary               >= 0.5 && < 0.6,
+    cereal               >= 0.3 && < 0.4,
     comonad              >= 3   && < 4,
     containers           >= 0.4 && < 0.6,
     hashable             >= 1.1 && < 1.3,
