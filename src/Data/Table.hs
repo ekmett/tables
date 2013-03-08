@@ -76,6 +76,8 @@ import Control.Comonad
 import Control.Lens
 import Control.Monad
 import Control.Monad.Fix
+import Data.Binary (Binary)
+import qualified Data.Binary as B
 import Data.Data
 import Data.Foldable as F
 import Data.Function (on)
@@ -93,6 +95,8 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
+import Data.Serialize (Serialize)
+import qualified Data.Serialize as C
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Traversable
@@ -192,6 +196,14 @@ instance (Tabular t, Data t) => Data (Table t) where
     _ -> error "gunfold"
   dataTypeOf _ = tableDataType
   dataCast1 f = gcast1 f
+
+instance (Tabular t, Binary t) => Binary (Table t) where
+  put = reviews table B.put
+  get = view table <$> B.get
+
+instance (Tabular t, Serialize t) => Serialize (Table t) where
+  put = reviews table C.put
+  get = view table <$> C.get
 
 fromListConstr :: Constr
 fromListConstr = mkConstr tableDataType "fromList" [] Prefix
