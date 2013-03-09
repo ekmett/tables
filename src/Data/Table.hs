@@ -206,7 +206,7 @@ instance (Tabular t, Serialize t) => Serialize (Table t) where
   put = reviews table C.put
   get = view table <$> C.get
 
-instance (Tabular t, SafeCopy t) => SafeCopy (Table t) where
+instance (Typeable t, Tabular t, SafeCopy t) => SafeCopy (Table t) where
   putCopy = contain . reviews table safePut
   getCopy = contain $ view table <$> safeGet
   errorTypeName pt = show $ typeOf (undefined `asProxyTypeOf` pt)
