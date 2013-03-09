@@ -51,7 +51,7 @@ library
     hashable             >= 1.1 && < 1.3,
     lens                 >= 3.8 && < 4,
     profunctors          >= 3.2 && < 4,
-    safecopy             >= 6.3 && < 0.9,
+    safecopy             >= 0.6.3 && < 0.9,
     transformers         >= 0.2 && < 0.4,
     transformers-compat  >= 0.1 && < 1,
     unordered-containers == 0.2.*
