@@ -95,6 +95,7 @@ import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe
 import Data.Monoid
+import Data.SafeCopy (SafeCopy(..), safeGet, safePut, contain)
 import Data.Serialize (Serialize)
 import qualified Data.Serialize as C
 import Data.Set (Set)
@@ -204,6 +205,13 @@ instance (Tabular t, Binary t) => Binary (Table t) where
 instance (Tabular t, Serialize t) => Serialize (Table t) where
   put = reviews table C.put
   get = view table <$> C.get
+
+instance (Tabular t, SafeCopy t) => SafeCopy (Table t) where
+  putCopy = contain . reviews table safePut
+  getCopy = contain $ view table <$> safeGet
+  errorTypeName pt = show $ typeOf (undefined `asProxyTypeOf` pt)
+    where asProxyTypeOf :: a -> p a -> a
+          asProxyTypeOf a _ = a
 
 fromListConstr :: Constr
 fromListConstr = mkConstr tableDataType "fromList" [] Prefix
