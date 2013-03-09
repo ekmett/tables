@@ -1,3 +1,8 @@
+0.3
+---
+* Instances for `SafeCopy`, `Binary` and `Cereal`
+* Added `insert'`
+
 0.2
 ---
 * Generalized Autoincrement
