@@ -1,42 +1,55 @@
 #!/usr/bin/runhaskell
 \begin{code}
+{-# OPTIONS_GHC -Wall #-}
 module Main (main) where
 
 import Data.List ( nub )
 import Data.Version ( showVersion )
-import Distribution.Package ( PackageName(PackageName), PackageId, InstalledPackageId, packageVersion, packageName )
+import Distribution.Package ( PackageName(PackageName), Package, PackageId, InstalledPackageId, packageVersion, packageName )
+import Distribution.PackageDescription ( PackageDescription(), TestSuite(..) )
 import Distribution.Simple ( defaultMainWithHooks, UserHooks(..), simpleUserHooks )
-import Distribution.Simple.Utils ( rewriteFile, createDirectoryIfMissingVerbose )
-import Distribution.Verbosity ( Verbosity )
+import Distribution.Simple.Utils ( rewriteFile, createDirectoryIfMissingVerbose, copyFiles )
 import Distribution.Simple.BuildPaths ( autogenModulesDir )
-import Distribution.Simple.Setup ( BuildFlags(buildVerbosity), fromFlag )
-import Distribution.Simple.LocalBuildInfo ( LocalBuildInfo(libraryConfig, testSuiteConfigs), ComponentLocalBuildInfo(componentPackageDeps) )
+import Distribution.Simple.Setup ( BuildFlags(buildVerbosity), Flag(..), fromFlag, HaddockFlags(haddockDistPref))
+import Distribution.Simple.LocalBuildInfo ( withLibLBI, withTestLBI, LocalBuildInfo(), ComponentLocalBuildInfo(componentPackageDeps) )
+import Distribution.Text ( display )
+import Distribution.Verbosity ( Verbosity, normal )
 import System.FilePath ( (</>) )
 
 main :: IO ()
 main = defaultMainWithHooks simpleUserHooks
   { buildHook = \pkg lbi hooks flags -> do
-     generateBuildModule "doctests" (fromFlag (buildVerbosity flags)) lbi
+     generateBuildModule (fromFlag (buildVerbosity flags)) pkg lbi
      buildHook simpleUserHooks pkg lbi hooks flags
+  , postHaddock = \args flags pkg lbi -> do
+     copyFiles normal (haddockOutputDir flags pkg) [("images","Hierarchy.png")]
+     postHaddock simpleUserHooks args flags pkg lbi
   }
 
-generateBuildModule :: String -> Verbosity -> LocalBuildInfo -> IO ()
-generateBuildModule testSuite verbosity lbi = do
+haddockOutputDir :: Package p => HaddockFlags -> p -> FilePath
+haddockOutputDir flags pkg = destDir where
+  baseDir = case haddockDistPref flags of
+    NoFlag -> "."
+    Flag x -> x
+  destDir = baseDir </> "doc" </> "html" </> display (packageName pkg)
+
+generateBuildModule :: Verbosity -> PackageDescription -> LocalBuildInfo -> IO ()
+generateBuildModule verbosity pkg lbi = do
   let dir = autogenModulesDir lbi
   createDirectoryIfMissingVerbose verbosity True dir
-  rewriteFile (dir </> "Build_" ++ testSuite ++ ".hs") $ unlines
-    [ "module Build_" ++ testSuite ++ " where"
-    , "deps :: [String]"
-    , "deps = " ++ (show $ formatdeps (testDeps testSuite lbi))
-    ]
+  withLibLBI pkg lbi $ \_ libcfg -> do
+    withTestLBI pkg lbi $ \suite suitecfg -> do
+      rewriteFile (dir </> "Build_" ++ testName suite ++ ".hs") $ unlines
+        [ "module Build_" ++ testName suite ++ " where"
+        , "deps :: [String]"
+        , "deps = " ++ (show $ formatdeps (testDeps libcfg suitecfg))
+        ]
   where
     formatdeps = map (formatone . snd)
     formatone p = case packageName p of
       PackageName n -> n ++ "-" ++ showVersion (packageVersion p)
 
-testDeps :: String -> LocalBuildInfo -> [(InstalledPackageId, PackageId)]
-testDeps testSuite lbi = nub $
-     maybe [] componentPackageDeps (lookup testSuite (testSuiteConfigs lbi))
-  ++ maybe [] componentPackageDeps (libraryConfig lbi)
+testDeps :: ComponentLocalBuildInfo -> ComponentLocalBuildInfo -> [(InstalledPackageId, PackageId)]
+testDeps xs ys = nub $ componentPackageDeps xs ++ componentPackageDeps ys
 
 \end{code}
