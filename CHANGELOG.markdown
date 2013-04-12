@@ -1,3 +1,7 @@
+0.3.1
+-----
+* Improved `Setup.lhs` to work with more versions of `cabal`.
+
 0.3
 ---
 * Instances for `SafeCopy`, `Binary` and `Cereal`
