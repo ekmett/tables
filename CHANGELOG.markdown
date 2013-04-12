@@ -1,6 +1,7 @@
 0.3.1
 -----
 * Improved `Setup.lhs` to work with more versions of `cabal`.
+* Internal compatibility with changes in `lens` 3.10 to `anon`.
 
 0.3
 ---
