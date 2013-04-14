@@ -20,6 +20,9 @@
 #ifndef MIN_VERSION_containers
 #define MIN_VERSION_containers(x,y,z) 1
 #endif
+#ifndef MIN_VERSION_lens
+#define MIN_VERSION_lens(x,y,z) 1
+#endif
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Data.Table
@@ -382,19 +385,19 @@ unsafeInsert t r = case r of
     CandidateIntMap idx     -> CandidateIntMap          $ idx & at (fetch k t) ?~ t
     CandidateHashMap idx    -> CandidateHashMap         $ idx & at (fetch k t) ?~ t
 #if MIN_VERSION_lens(3,10,0)
-    SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . anon (nearly [] P.null) %~ (t:)
-    SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon (nearly [] P.null) %~ (t:)
-    SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon (nearly [] P.null) %~ (t:)
-    InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon (nearly [] P.null) %~ (t:)) (fetch k t)
-    InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon (nearly [] P.null) %~ (t:)) (fetch k t)
-    InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon (nearly [] P.null) %@ (t:)) (fetch k t)
-#else    
     SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . anon [] P.null %~ (t:)
     SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon [] P.null %~ (t:)
     SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon [] P.null %~ (t:)
     InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
     InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
     InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+#else    
+    SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . anon (nearly [] P.null) %~ (t:)
+    SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon (nearly [] P.null) %~ (t:)
+    SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon (nearly [] P.null) %~ (t:)
+    InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon (nearly [] P.null) %~ (t:)) (fetch k t)
+    InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon (nearly [] P.null) %~ (t:)) (fetch k t)
+    InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon (nearly [] P.null) %~ (t:)) (fetch k t)
 #endif
 {-# INLINE unsafeInsert #-}
 
