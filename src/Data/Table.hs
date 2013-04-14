@@ -366,10 +366,11 @@ insert' t0 r = case autoTab t0 of
     Table m    -> go (p m)
   Nothing -> go t0
   where
-  go t = (,) t $ unsafeinsert' t (delete t r)
+  go t = (,) t $ unsafeInsert t (delete t r)
   {-# INLINE go #-}
 {-# INLINE insert' #-}
 
+-- | Insert a row into a relation, ignoring collisions.
 unsafeInsert :: Tabular t => t -> Table t -> Table t
 unsafeInsert t r = case r of
   EmptyTable -> singleton t
@@ -698,6 +699,11 @@ instance With (Key SupplementalHash t) t where
 fromList :: Tabular t => [t] -> Table t
 fromList = foldl' (flip insert) empty
 {-# INLINE fromList #-}
+
+-- | Build up a table from a list, without checking for collisions
+unsafeFromList :: Tabular t => [t] -> Table t
+unsafeFromList = foldl' (flip unsafeInsert) empty
+{-# INLINE unsafeFromList #-}
 
 -- * Lifting terms to types
 
