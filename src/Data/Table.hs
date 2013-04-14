@@ -356,6 +356,7 @@ delete t m = deleteCollisions m (collisions t m)
 -- | Insert a row into a relation, removing collisions.
 insert :: Tabular t => t -> Table t -> Table t
 insert t r = snd $ insert' t r
+{-# INLINE insert #-}
 
 -- | Insert a row into a relation, removing collisions.
 insert' :: Tabular t => t -> Table t -> (t, Table t)
@@ -365,21 +366,25 @@ insert' t0 r = case autoTab t0 of
     Table m    -> go (p m)
   Nothing -> go t0
   where
-  go t = (,) t $ case delete t r of
-    EmptyTable -> singleton t
-    Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
-      PrimaryMap idx          -> primarily k $ PrimaryMap $ idx & at (fetch k t) ?~ t
-      CandidateMap idx        -> CandidateMap             $ idx & at (fetch k t) ?~ t
-      CandidateIntMap idx     -> CandidateIntMap          $ idx & at (fetch k t) ?~ t
-      CandidateHashMap idx    -> CandidateHashMap         $ idx & at (fetch k t) ?~ t
-      SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . anon [] P.null %~ (t:)
-      SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon [] P.null %~ (t:)
-      SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon [] P.null %~ (t:)
-      InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
-      InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
-      InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+  go t = (,) t $ unsafeinsert' t (delete t r)
   {-# INLINE go #-}
-{-# INLINE insert #-}
+{-# INLINE insert' #-}
+
+unsafeInsert :: Tabular t => t -> Table t -> Table t
+unsafeInsert t r = case r of
+  EmptyTable -> singleton t
+  Table m -> Table $ runIdentity $ forTab m $ \k i -> Identity $ case i of
+    PrimaryMap idx          -> primarily k $ PrimaryMap $ idx & at (fetch k t) ?~ t
+    CandidateMap idx        -> CandidateMap             $ idx & at (fetch k t) ?~ t
+    CandidateIntMap idx     -> CandidateIntMap          $ idx & at (fetch k t) ?~ t
+    CandidateHashMap idx    -> CandidateHashMap         $ idx & at (fetch k t) ?~ t
+    SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . anon [] P.null %~ (t:)
+    SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon [] P.null %~ (t:)
+    SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon [] P.null %~ (t:)
+    InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+    InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+    InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon [] P.null %~ (t:)) (fetch k t)
+{-# INLINE unsafeInsert #-}
 
 -- | Retrieve a row count.
 count :: Table t -> Int
