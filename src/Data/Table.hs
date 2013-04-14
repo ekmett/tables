@@ -45,6 +45,7 @@ module Data.Table
   , singleton
   , table
   , fromList
+  , unsafeFromList
   -- ** Reading and Writing
   , null
   , count
@@ -53,6 +54,7 @@ module Data.Table
   , Group(..)
   , insert
   , insert'
+  , unsafeInsert
   , delete
   , rows
   , rows'
