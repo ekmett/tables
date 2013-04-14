@@ -504,13 +504,13 @@ class Withal q s t | q -> s t where
 instance Ord a => Withal (t -> [a]) [a] t where
   withAny _ _  f EmptyTable  = f EmptyTable
   withAny k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.any (\e -> ss^.contains e) . k)
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
           ss = S.fromList as
   {-# INLINE withAny #-}
 
   withAll _ _  f EmptyTable  = f EmptyTable
   withAll k as f r@(Table m) = go $ m^..primaryMap.folded.filtered (P.all (\e -> ss^.contains e) . k)
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
           ss = S.fromList as
   {-# INLINE withAll #-}
 
@@ -518,7 +518,7 @@ instance Ord a => Withal (Key Inverted t (Set a)) [a] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedMap idx -> as >>= \a -> idx^..ix a.folded
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAny #-}
 
   withAll _  _  f EmptyTable  = f EmptyTable
@@ -526,14 +526,14 @@ instance Ord a => Withal (Key Inverted t (Set a)) [a] t where
   withAll ky (a:as) f r@(Table m) = case ixTab m ky of
     InvertedMap idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
                          in go $ F.toList $ F.foldl' (\r -> M.intersection r . mkm) (mkm a) as
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
 instance Withal (Key InvertedInt t (IntSet)) [Int] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedIntMap idx -> as >>= \a -> idx^..ix a.folded
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAny #-}
 
   withAll _  _  f EmptyTable  = f EmptyTable
@@ -541,14 +541,14 @@ instance Withal (Key InvertedInt t (IntSet)) [Int] t where
   withAll ky (a:as) f r@(Table m) = case ixTab m ky of
     InvertedIntMap idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
                           in go $ F.toList $ F.foldl' (\r -> M.intersection r . mkm) (mkm a) as
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
 instance (Eq a, Hashable a) =>Withal (Key InvertedHash t (HashSet a)) [a] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedHashMap idx -> as >>= \a -> idx^..ix a.folded
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAny #-}
 
   withAll _  _  f EmptyTable  = f EmptyTable
@@ -556,7 +556,7 @@ instance (Eq a, Hashable a) =>Withal (Key InvertedHash t (HashSet a)) [a] t wher
   withAll ky (a:as) f r@(Table m) = case ixTab m ky of
     InvertedHashMap idx -> let mkm c = M.fromList [ (fetch primary v, v) | v <- idx^..ix c.folded ]
                           in go $ F.toList $ F.foldl' (\r -> M.intersection r . mkm) (mkm a) as
-    where go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+    where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
 
@@ -581,7 +581,7 @@ instance With ((->) t) t where
       lt = cmp LT EQ
       eq = cmp EQ EQ
       gt = cmp GT EQ
-      go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+      go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key Primary t) t where
@@ -596,7 +596,7 @@ instance With (Key Primary t) t where
       lt = cmp LT EQ
       eq = cmp EQ EQ
       gt = cmp GT EQ
-      go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+      go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key Candidate t) t where
@@ -613,7 +613,7 @@ instance With (Key Candidate t) t where
         lt = cmp LT EQ
         eq = cmp EQ EQ
         gt = cmp GT EQ
-        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+        go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key CandidateInt t) t where
@@ -630,7 +630,7 @@ instance With (Key CandidateInt t) t where
         lt = cmp LT EQ
         eq = cmp EQ EQ
         gt = cmp GT EQ
-        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+        go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key CandidateHash t) t where
@@ -644,7 +644,7 @@ instance With (Key CandidateHash t) t where
         lt = cmp LT EQ
         eq = cmp EQ EQ
         gt = cmp GT EQ
-        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+        go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key Supplemental t) t where
@@ -661,7 +661,7 @@ instance With (Key Supplemental t) t where
         lt = cmp LT EQ
         eq = cmp EQ EQ
         gt = cmp GT EQ
-        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+        go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key SupplementalInt t) t where
@@ -678,7 +678,7 @@ instance With (Key SupplementalInt t) t where
         lt = cmp LT EQ
         eq = cmp EQ EQ
         gt = cmp GT EQ
-        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+        go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 instance With (Key SupplementalHash t) t where
@@ -692,7 +692,7 @@ instance With (Key SupplementalHash t) t where
         lt = cmp LT EQ
         eq = cmp EQ EQ
         gt = cmp GT EQ
-        go xs = f (xs^.table) <&> mappend (deleteCollisions r xs)
+        go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE with #-}
 
 -- | Build up a table from a list
