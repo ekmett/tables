@@ -279,6 +279,7 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
   CandidateMap idx        -> CandidateMap             $ F.foldl' (flip (M.delete . fetch k)) idx ts
   CandidateIntMap idx     -> CandidateIntMap          $ F.foldl' (flip (IM.delete . fetch k)) idx ts
   CandidateHashMap idx    -> CandidateHashMap         $ F.foldl' (flip (HM.delete . fetch k)) idx ts
+#if MIN_VERSION_lens(3,10,0)
   SupplementalMap idx     -> SupplementalMap $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   SupplementalIntMap idx  -> SupplementalIntMap $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
@@ -291,7 +292,20 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   InvertedHashMap idx     -> InvertedHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (f, [t]) | t <- ts, f <- HS.toList $ fetch k t ] $ \m ky ys ->
     m & at ky . anon [] P.null %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
-
+#else
+  SupplementalMap idx     -> SupplementalMap $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
+    m & at ky . anon (nearly [] P.null) %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  SupplementalIntMap idx  -> SupplementalIntMap $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
+    m & at ky . anon (nearly [] P.null) %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  SupplementalHashMap idx -> SupplementalHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
+    m & at ky . anon nearly ([] P.null) %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  InvertedMap idx         -> InvertedMap     $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- S.toList $ fetch k t ] $ \m ky ys ->
+    m & at ky . anon nearly ([] P.null) %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  InvertedIntMap idx      -> InvertedIntMap  $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (f, [t]) | t <- ts, f <- IS.toList $ fetch k t ] $ \m ky ys ->
+    m & at ky . anon nearly ([] P.null) %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+  InvertedHashMap idx     -> InvertedHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (f, [t]) | t <- ts, f <- HS.toList $ fetch k t ] $ \m ky ys ->
+    m & at ky . anon nearly ([] P.null) %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+#endif
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (AnIndex t)
