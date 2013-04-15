@@ -78,6 +78,7 @@ module Data.Table
 
 import Control.Applicative hiding (empty)
 import Control.Comonad
+import Control.DeepSeq (NFData(rnf))
 import Control.Lens hiding (anon)
 import Control.Monad
 import Control.Monad.Fix
@@ -544,7 +545,7 @@ instance Ord a => Withal (Key Inverted t (Set a)) [a] t where
     where go xs = f (unsafeFromList xs) <&> mappend (deleteCollisions r xs)
   {-# INLINE withAll #-}
 
-instance Withal (Key InvertedInt t (IntSet)) [Int] t where
+instance Withal (Key InvertedInt t IntSet) [Int] t where
   withAny _  _  f EmptyTable  = f EmptyTable
   withAny ky as f r@(Table m) = go $ case ixTab m ky of
     InvertedIntMap idx -> as >>= \a -> idx^..ix a.folded
@@ -995,3 +996,38 @@ instance Ord a => Tabular (Value a) where
   {-# INLINE ixTab #-}
   forTab (ValueTab x) f = ValueTab <$> f Val x
   {-# INLINE forTab #-}
+
+instance (Tabular a, NFData a, NFData (Tab a (AnIndex a))) => NFData (Table a) where
+    rnf (Table tab) = rnf tab
+    rnf EmptyTable = ()
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Primary a) where
+    rnf (PrimaryMap m) = rnf m
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Supplemental a) where
+    rnf (SupplementalMap m) = rnf m
+
+instance (NFData t, NFData (PKT t)) => NFData (AnIndex t SupplementalInt Int) where
+    rnf (SupplementalIntMap m) = rnf m
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t SupplementalHash a) where
+    rnf (SupplementalHashMap m) = rnf m
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Candidate a) where
+    rnf (CandidateMap m) = rnf m
+
+instance (NFData t, NFData (PKT t)) => NFData (AnIndex t CandidateInt Int) where
+    rnf (CandidateIntMap m) = rnf m
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t CandidateHash a) where
+    rnf (CandidateHashMap m) = rnf m
+
+instance (NFData t, NFData (PKT t)) => NFData (AnIndex t InvertedInt IntSet) where
+    rnf (InvertedIntMap m) = rnf m
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Inverted (Set a)) where
+    rnf (InvertedMap m) = rnf m
+
+instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t InvertedHash (HashSet a)) where
+    rnf (InvertedHashMap m) = rnf m
+
