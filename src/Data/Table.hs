@@ -231,7 +231,7 @@ instance Monoid (Table t) where
 
   EmptyTable `mappend` r          = r
   r          `mappend` EmptyTable = r
-  r@Table{}  `mappend` s          = F.foldl' (flip insert) r s
+  r          `mappend` s@Table{}  = F.foldl' (flip insert) s r
   {-# INLINE mappend #-}
 
 instance Eq t => Eq (Table t) where
