@@ -846,6 +846,18 @@ instance Comonad Auto where
   extend f w@(Auto k _) = Auto k (f w)
   {-# INLINE extend #-}
 
+instance Binary a => Binary (Auto a) where
+  put (Auto k a) = B.put k >> B.put a
+  get = Auto <$> B.get <*> B.get
+
+instance Serialize a => Serialize (Auto a) where
+  put (Auto k a) = C.put k >> C.put a
+  get = Auto <$> C.get <*> C.get
+
+instance SafeCopy a => SafeCopy (Auto a) where
+  getCopy = contain $ Auto <$> safeGet <*> safeGet
+  putCopy (Auto k a) = contain $ safePut k >> safePut a  
+
 instance Tabular (Auto a) where
   type PKT (Auto a) = Int
   data Tab (Auto a) i = AutoTab (i Primary Int)
