@@ -49,6 +49,8 @@ module Data.Table
   , table
   , fromList
   , unsafeFromList
+  -- ** Combining Tables
+  , difference
   -- ** Reading and Writing
   , null
   , count
@@ -721,6 +723,7 @@ unsafeFromList :: Tabular t => [t] -> Table t
 unsafeFromList = foldl' (flip unsafeInsert) empty
 {-# INLINE unsafeFromList #-}
 
+-- | Return the elements of the first table that do not share a key with an element of the second table
 difference :: (Tabular t1, Tabular t2, PKT t1 ~ PKT t2) => Table t1 -> Table t2 -> Table t1
 difference t1 t2 = deleteWithAny ((:[]) . fetch primary) (t2 ^.. rows' . to (fetch primary)) t1
 
