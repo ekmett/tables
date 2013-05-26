@@ -52,6 +52,7 @@ module Data.Table
   -- ** Combining Tables
   , union
   , difference
+  , intersection
   -- ** Reading and Writing
   , null
   , count
@@ -735,6 +736,11 @@ union = mappend
 difference :: (Tabular t1, Tabular t2, PKT t1 ~ PKT t2) => Table t1 -> Table t2 -> Table t1
 difference t1 t2 = deleteWithAny ((:[]) . fetch primary) (t2 ^.. rows' . to (fetch primary)) t1
 {-# INLINE difference #-}
+
+-- | Return the elements of the first table that share a key with an element of the second table
+intersection :: (Tabular t1, Tabular t2, PKT t1 ~ PKT t2) => Table t1 -> Table t2 -> Table t1
+intersection t1 t2 = t1 ^. withAny ((:[]) . fetch primary) (t2 ^.. rows' . to (fetch primary))
+{-# INLINE intersection #-}
 
 -- * Lifting terms to types
 
