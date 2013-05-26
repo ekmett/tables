@@ -50,6 +50,7 @@ module Data.Table
   , fromList
   , unsafeFromList
   -- ** Combining Tables
+  , union
   , difference
   -- ** Reading and Writing
   , null
@@ -723,9 +724,17 @@ unsafeFromList :: Tabular t => [t] -> Table t
 unsafeFromList = foldl' (flip unsafeInsert) empty
 {-# INLINE unsafeFromList #-}
 
+-- | Left-biased union of the two tables
+--
+-- This is a synonym for 'mappend'
+union :: Table t -> Table t -> Table t
+union = mappend
+{-# INLINE union #-}
+
 -- | Return the elements of the first table that do not share a key with an element of the second table
 difference :: (Tabular t1, Tabular t2, PKT t1 ~ PKT t2) => Table t1 -> Table t2 -> Table t1
 difference t1 t2 = deleteWithAny ((:[]) . fetch primary) (t2 ^.. rows' . to (fetch primary)) t1
+{-# INLINE difference #-}
 
 -- * Lifting terms to types
 
