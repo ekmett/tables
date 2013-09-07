@@ -7,6 +7,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveTraversable #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE EmptyDataDecls #-}
@@ -43,6 +44,8 @@ module Data.Table
   , Tabular(..)
   , Tab(..)
   , Key(..)
+  -- ** Template Haskell helpers
+  , makeTabular
   -- ** Table Construction
   , empty
   , singleton
@@ -88,8 +91,9 @@ import Control.Monad
 import Control.Monad.Fix
 import Data.Binary (Binary)
 import qualified Data.Binary as B
+import Data.Char (toUpper)
 import Data.Data
-import Data.Foldable as F
+import Data.Foldable as F hiding (foldl1)
 import Data.Function (on)
 import Data.Functor.Identity
 import Data.Hashable
@@ -110,7 +114,8 @@ import Data.Serialize (Serialize)
 import qualified Data.Serialize as C
 import Data.Set (Set)
 import qualified Data.Set as S
-import Data.Traversable
+import Data.Traversable hiding (mapM)
+import Language.Haskell.TH
 import qualified Prelude as P
 import Prelude hiding (null)
 
@@ -324,6 +329,75 @@ emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
 {-# INLINE emptyTab #-}
 
 -- * Public API
+
+-- | Generate a Tabular instance for a data type. Currently, this only
+-- works for types which have no type variables, and won't generate autoTab.
+--
+-- @
+-- data Foo = Foo { fooId :: Int, fooBar :: String, fooBaz :: Double }
+--
+-- makeTabular 'fooId [(''Candidate, 'fooBaz), (''Supplemental, 'fooBar)]
+-- @
+makeTabular :: Name -> [(Name, Name)] -> Q [Dec]
+makeTabular p ks = do
+  -- Get the type name and PKT from the primary selector
+  -- FIXME: Work for more flexible type names
+  VarI _ (AppT (AppT ArrowT t) pkt) _ _ <- reify p
+
+
+  -- Locally used variable names
+  k <- VarT <$> newName "k"
+  a <- VarT <$> newName "a"
+  f <- newName "f"
+
+  tabName <- newName $ "Tab_" ++ nameBase p
+
+  let keys = (''Primary, p) : ks
+      keyCons@(pK:_) = map (uppercase.snd) keys
+
+      idiom, idiom' :: [Exp] -> Exp
+      idiom' = foldl1 (\l r -> AppE (AppE (VarE '(<*>)) l) r)
+
+      idiom [] = AppE (VarE 'pure) (ConE '())
+      idiom (x:xs) = idiom' $ AppE (VarE 'pure) x : xs
+
+  -- FIXME: Work for more flexible type names
+  keyTypes <- map (\(VarI _ (AppT _ t) _ _) -> t) <$> mapM (reify . snd) keys
+  keyVars  <- mapM (newName . nameBase . snd) keys
+
+  return [InstanceD [] (AppT (ConT ''Tabular) t)
+    [ TySynInstD ''PKT [t] pkt
+
+    , DataInstD [] ''Key [k, t, a] (zipWith (\(kk,n) kt ->
+        ForallC [] [EqualP k (ConT kk), EqualP a kt]
+          (NormalC (uppercase n) [])) keys keyTypes) []
+
+    , DataInstD [] ''Tab [t, a] [NormalC tabName $ zipWith
+        (\(k,_) t -> (NotStrict, AppT (AppT a (ConT k)) t)) keys keyTypes] []
+
+    , FunD 'fetch $ map (\(_,k) ->
+        Clause [ConP (uppercase k) []] (NormalB (VarE k)) []) keys
+
+    , ValD (VarP 'primary) (NormalB (ConE pK)) []
+
+    , FunD 'primarily [Clause [ConP pK [], VarP f] (NormalB (VarE f)) []]
+
+    , FunD 'mkTab [Clause [VarP f]
+      ( NormalB . idiom $ ConE tabName : map (AppE (VarE f) . ConE) keyCons
+      ) []]
+
+    , FunD 'forTab [Clause [ConP tabName (map VarP keyVars), VarP f]
+      ( NormalB . idiom $ ConE tabName : zipWith
+          (\c x -> AppE (AppE (VarE f) (ConE c)) (VarE x)) keyCons keyVars
+      ) []]
+
+    , FunD 'ixTab [Clause [ConP tabName (map VarP keyVars), VarP f]
+      ( NormalB . CaseE (VarE f) $ zipWith
+        (\c x -> Match (ConP c []) (NormalB $ VarE x) []) keyCons keyVars
+      ) []]
+    ]]
+  where uppercase :: Name -> Name
+        uppercase = iso nameBase mkName._head %~ toUpper
 
 -- | Construct an empty relation
 empty :: Table t
