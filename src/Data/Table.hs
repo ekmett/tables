@@ -500,7 +500,7 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
-instance (Tabular b, Applicative f, PKT a ~ PKT b) => Each f (Table a) (Table b) a b where
+instance (Tabular b, Applicative f, PKT a ~ PKT b, Indexable (PKT a) p) => Each p f (Table a) (Table b) a b where
   each _ EmptyTable = pure EmptyTable
   each f (Table m)  = P.foldr insert empty <$> sequenceA (M.foldrWithKey (\i a r -> indexed f i a : r) [] $ m^.primaryMap)
 
@@ -908,7 +908,7 @@ instance Field2 (Auto a) (Auto b) a b where
 
 type instance Index (Auto a) = Int
 
-instance (a ~ Int, b ~ Int, Applicative f) => Each f (Auto a) (Auto b) a b where
+instance (a ~ Int, b ~ Int, Applicative f, Indexable Int p) => Each p f (Auto a) (Auto b) a b where
   each f (Auto k a) = Auto <$> indexed f (0 :: Int) k <*> indexed f (1 :: Int) a
   {-# INLINE each #-}
 
@@ -1037,8 +1037,8 @@ instance Field1 (Value a) (Value b) a b where
 type instance Index (Value a) = ()
 type instance IxValue (Value a) = a
 
-instance Functor f => Each f (Value a) (Value b) a b where
-  each f (Value a) = Value <$> indexed f () a
+instance (Functor f, p ~ (->)) => Each p f (Value a) (Value b) a b where
+  each f (Value a) = Value <$> f a
   {-# INLINE each #-}
 
 instance Gettable f => Contains f (Value a) where
