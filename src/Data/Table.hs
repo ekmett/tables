@@ -67,7 +67,6 @@ module Data.Table
   , unsafeInsert
   , delete
   , rows
-  , rows'
   -- * Esoterica
   , Auto(..)
   , autoKey
@@ -95,7 +94,6 @@ import Data.Char (toUpper)
 import Data.Data
 import Data.Foldable as F hiding (foldl1)
 import Data.Function (on)
-import Data.Functor.Identity
 import Data.Hashable
 import Data.HashMap.Strict (HashMap)
 import qualified Data.HashMap.Strict as HM
@@ -268,11 +266,12 @@ instance Foldable Table where
 type instance Index (Table t) = PKT t
 type instance IxValue (Table t) = t
 
-instance Gettable f => Contains f (Table t) where
+instance Contains (Table t) where
+  type Containing (Table t) f = (Contravariant f, Functor f)
   contains k f EmptyTable = coerce $ indexed f k False
   contains k f (Table m) = Table <$> primaryMap (contains k f) m
 
-instance Applicative f => Ixed f (Table t) where
+instance Ixed (Table t) where
   ix _ _ EmptyTable = pure EmptyTable
   ix k f (Table m) = Table <$> primaryMap (ix k f) m
   {-# INLINE ix #-}
@@ -500,19 +499,23 @@ table :: Tabular t => Iso' [t] (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
 
-instance (Tabular b, Applicative f, PKT a ~ PKT b, Indexable (PKT a) p) => Each p f (Table a) (Table b) a b where
+instance (Tabular b, PKT a ~ PKT b) => Each (Table a) (Table b) a b where
   each _ EmptyTable = pure EmptyTable
-  each f (Table m)  = P.foldr insert empty <$> sequenceA (M.foldrWithKey (\i a r -> indexed f i a : r) [] $ m^.primaryMap)
+  each f r@Table{}  = P.foldr insert empty <$> traverse f (toList r)
+  {-# INLINE each #-}
 
+{-
 -- | Traverse all of the rows in a table without changing any types
 rows' :: Traversal' (Table t) t
 rows' _ EmptyTable = pure EmptyTable
 rows' f r@Table{} = P.foldr insert empty <$> traverse f (toList r)
 {-# INLINE rows' #-}
+-}
 
 -- | Traverse all of the rows in a table, potentially changing table types completely.
-rows :: Tabular t => Traversal (Table s) (Table t) s t
-rows f r = P.foldr insert empty <$> traverse f (toList r)
+rows :: (Tabular t, PKT s ~ PKT t) => IndexedTraversal (PKT s) (Table s) (Table t) s t
+rows _ EmptyTable = pure EmptyTable
+rows f (Table m)  = P.foldr insert empty <$> sequenceA (M.foldrWithKey (\i a r -> indexed f i a : r) [] $ m^.primaryMap)
 {-# INLINE rows #-}
 
 class Group f q t i | q -> t i where
@@ -808,12 +811,12 @@ union = mappend
 
 -- | Return the elements of the first table that do not share a key with an element of the second table
 difference :: (Tabular t1, Tabular t2, PKT t1 ~ PKT t2) => Table t1 -> Table t2 -> Table t1
-difference t1 t2 = deleteWithAny ((:[]) . fetch primary) (t2 ^.. rows' . to (fetch primary)) t1
+difference t1 t2 = deleteWithAny ((:[]) . fetch primary) (t2 ^.. each . to (fetch primary)) t1
 {-# INLINE difference #-}
 
 -- | Return the elements of the first table that share a key with an element of the second table
 intersection :: (Tabular t1, Tabular t2, PKT t1 ~ PKT t2) => Table t1 -> Table t2 -> Table t1
-intersection t1 t2 = t1 ^. withAny ((:[]) . fetch primary) (t2 ^.. rows' . to (fetch primary))
+intersection t1 t2 = t1 ^. withAny ((:[]) . fetch primary) (t2 ^.. each . to (fetch primary))
 {-# INLINE intersection #-}
 
 -- * Lifting terms to types
@@ -908,8 +911,8 @@ instance Field2 (Auto a) (Auto b) a b where
 
 type instance Index (Auto a) = Int
 
-instance (a ~ Int, b ~ Int, Applicative f, Indexable Int p) => Each p f (Auto a) (Auto b) a b where
-  each f (Auto k a) = Auto <$> indexed f (0 :: Int) k <*> indexed f (1 :: Int) a
+instance (a ~ Int, b ~ Int) => Each (Auto a) (Auto b) a b where
+  each f (Auto k a) = Auto <$> f k <*> f a
   {-# INLINE each #-}
 
 data Auto a = Auto !Int a
@@ -1037,15 +1040,16 @@ instance Field1 (Value a) (Value b) a b where
 type instance Index (Value a) = ()
 type instance IxValue (Value a) = a
 
-instance (Functor f, p ~ (->)) => Each p f (Value a) (Value b) a b where
+instance Each (Value a) (Value b) a b where
   each f (Value a) = Value <$> f a
   {-# INLINE each #-}
 
-instance Gettable f => Contains f (Value a) where
+instance Contains (Value a) where
+  type Containing (Value a) f = (Contravariant f, Functor f)
   contains () pafb _ = coerce (indexed pafb () True)
   {-# INLINE contains #-}
 
-instance Functor f => Ixed f (Value a) where
+instance Ixed (Value a) where
   ix () pafb (Value a) = Value <$> indexed pafb () a
   {-# INLINE ix #-}
 
