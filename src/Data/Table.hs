@@ -890,7 +890,7 @@ instance (t ~ HashSet, Eq a, Hashable a) => IsKeyType InvertedHash (t a) where
   {-# INLINE keyType #-}
 
 class HasValue p q f s t a b | s -> a, t -> b, s b -> t, t a -> s where
-  value :: Overloading p q f s t a b
+  value :: Optical p q f s t a b
 
 ------------------------------------------------------------------------------
 -- A simple table with an auto-incremented key
@@ -1008,7 +1008,7 @@ instance Ord k => Tabular (k,v) where
 ------------------------------------------------------------------------------
 
 instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Identity a) (Identity b) a b where
-  value = unwrapped
+  value = _Unwrapped
   {-# INLINE value #-}
 
 instance Ord a => Tabular (Identity a) where
@@ -1054,8 +1054,8 @@ instance Ixed (Value a) where
   {-# INLINE ix #-}
 
 instance Wrapped a b (Value a) (Value b) where
-  wrapped = iso Value $ \(Value a) -> a
-  {-# INLINE wrapped #-}
+  _Wrapped' = iso Value $ \(Value a) -> a
+  {-# INLINE _Wrapped' #-}
 
 data Value a = Value a
   deriving (Eq,Ord,Show,Read,Functor,Foldable,Traversable,Data,Typeable)
@@ -1087,7 +1087,7 @@ instance ComonadApply Value where
   {-# INLINE (<@>) #-}
 
 instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
-  value = unwrapped
+  value = _Unwrapped
   {-# INLINE value #-}
 
 instance Ord a => Tabular (Value a) where
