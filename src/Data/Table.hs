@@ -1053,7 +1053,8 @@ instance Ixed (Value a) where
   ix () pafb (Value a) = Value <$> indexed pafb () a
   {-# INLINE ix #-}
 
-instance Wrapped a b (Value a) (Value b) where
+instance Wrapped (Value a) where
+  type Unwrapped (Value a) = a
   _Wrapped' = iso Value $ \(Value a) -> a
   {-# INLINE _Wrapped' #-}
 
