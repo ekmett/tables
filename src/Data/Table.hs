@@ -1040,7 +1040,7 @@ instance Ixed (Value a) where
 
 instance Wrapped (Value a) where
   type Unwrapped (Value a) = a
-  _Wrapped' = iso Value $ \(Value a) -> a
+  _Wrapped' = iso (\(Value a) -> a) Value
   {-# INLINE _Wrapped' #-}
 
 data Value a = Value a
