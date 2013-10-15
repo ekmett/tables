@@ -889,9 +889,6 @@ instance (t ~ HashSet, Eq a, Hashable a) => IsKeyType InvertedHash (t a) where
   keyType _ = InvertedHash
   {-# INLINE keyType #-}
 
-class HasValue p q f s t a b | s -> a, t -> b, s b -> t, t a -> s where
-  value :: Optical p q f s t a b
-
 ------------------------------------------------------------------------------
 -- A simple table with an auto-incremented key
 ------------------------------------------------------------------------------
@@ -921,10 +918,6 @@ data Auto a = Auto !Int a
 autoKey :: Lens' (Auto a) Int
 autoKey f (Auto k a) = f k <&> \k' -> Auto k' a
 {-# INLINE autoKey #-}
-
-instance (Indexable Int p, q ~ (->), Functor f) => HasValue p q f (Auto a) (Auto b) a b where
-  value f (Auto k a) = indexed f k a <&> Auto k
-  {-# INLINE value #-}
 
 instance FunctorWithIndex Int Auto where
   imap f (Auto k a) = Auto k (f k a)
@@ -980,10 +973,6 @@ instance Tabular (Auto a) where
 -- A simple key-value pair, indexed on the key
 ------------------------------------------------------------------------------
 
-instance (Indexable k p, q ~ (->), Functor f) => HasValue p q f (k, a) (k, b) a b where
-  value f (k, a) = indexed f k a <&> (,) k
-  {-# INLINE value #-}
-
 -- | Simple (key, value) pairs
 instance Ord k => Tabular (k,v) where
   type PKT (k,v) = k
@@ -1006,10 +995,6 @@ instance Ord k => Tabular (k,v) where
 ------------------------------------------------------------------------------
 -- Set-like tables with Identity
 ------------------------------------------------------------------------------
-
-instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Identity a) (Identity b) a b where
-  value = _Unwrapped
-  {-# INLINE value #-}
 
 instance Ord a => Tabular (Identity a) where
   type PKT (Identity a) = a
@@ -1086,10 +1071,6 @@ instance Comonad Value where
 instance ComonadApply Value where
   Value f <@> Value a = Value (f a)
   {-# INLINE (<@>) #-}
-
-instance (Profunctor p, Functor f, p ~ q) => HasValue p q f (Value a) (Value b) a b where
-  value = _Unwrapped
-  {-# INLINE value #-}
 
 instance Ord a => Tabular (Value a) where
   type PKT (Value a) = a
