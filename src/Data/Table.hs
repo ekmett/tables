@@ -846,13 +846,31 @@ data Primary
 -- | A key type for values unique to each row, but that are
 --  not 'Primary'.
 data Candidate
+
+-- | 'CandidateInt' keys are like 'Candidate' keys but are backed by
+-- an 'IntMap' rather than a 'Map'. This makes them more performant,
+-- but values at 'CandidateInt' keys may only be 'Int's.
 data CandidateInt
+
+-- | 'CandidateHash' keys are like 'Candidate' keys but are backed by
+-- a 'HashMap' rather than a 'Map'. This makes them more performant
+-- on '(==)' and '(/=)' lookups, but values at 'CandidateHash' keys
+-- must be instances of 'Hashable' and 'Eq'.
 data CandidateHash
 
 -- | A key type for supplemental data attached to each row that we
 --  still may want to index by. Values need not be unique.
 data Supplemental
+
+-- | 'SupplementalInt' keys are like 'Supplemental' keys but are backed by
+-- an 'IntMap' rather than a 'Map'. This makes them more performant,
+-- but values at 'SupplementalInt' keys may only be 'Int's.
 data SupplementalInt
+
+-- | 'SupplementalHash' keys are like 'Supplemental' keys but are backed by
+-- a 'HashMap' rather than a 'Map'. This makes them more performant
+-- on '(==)' and '(/=)' lookups, but values at 'SupplementalHash' keys
+-- must be instances of 'Hashable' and 'Eq'.
 data SupplementalHash
 
 -- | A key type for inverse keys.
