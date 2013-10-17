@@ -67,6 +67,15 @@ module Data.Table
   , unsafeInsert
   , delete
   , rows
+  -- * Key Types
+  -- ** Primary Keys
+  , Primary
+  -- ** Candidate Keys
+  , Candidate, CandidateInt, CandidateHash
+  -- ** Supplemental Keys
+  , Supplemental, SupplementalInt, SupplementalHash
+  -- ** Inverted Keys
+  , Inverted, InvertedInt, InvertedHash
   -- * Esoterica
   , Auto(..)
   , autoKey
@@ -75,10 +84,6 @@ module Data.Table
   -- * Implementation Details
   , IsKeyType(..)
   , KeyType(..)
-  , Primary
-  , Candidate, CandidateInt, CandidateHash
-  , Supplemental, SupplementalInt, SupplementalHash
-  , Inverted, InvertedInt, InvertedHash
   , AnIndex(..)
   ) where
 
@@ -834,14 +839,23 @@ data KeyType t a where
   InvertedInt      ::                       KeyType InvertedInt      IntSet
   InvertedHash     :: (Eq a, Hashable a) => KeyType InvertedHash     (HashSet a)
 
--- |  Type level key types
+-- | The key type for the canonical, unique identifier attached to
+--  every row. There should only be one 'Primary' key.
 data Primary
+
+-- | A key type for values unique to each row, but that are
+--  not 'Primary'.
 data Candidate
 data CandidateInt
 data CandidateHash
+
+-- | A key type for supplemental data attached to each row that we
+--  still may want to index by. Values need not be unique.
 data Supplemental
 data SupplementalInt
 data SupplementalHash
+
+-- | A key type for inverse keys.
 data Inverted
 data InvertedInt
 data InvertedHash
