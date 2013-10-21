@@ -854,7 +854,7 @@ data CandidateInt
 
 -- | 'CandidateHash' keys are like 'Candidate' keys but are backed by
 -- a 'HashMap' rather than a 'Map'. This makes them more performant
--- on '(==)' and '(/=)' lookups, but values at 'CandidateHash' keys
+-- on @('==')@ and @('/=')@ lookups, but values at 'CandidateHash' keys
 -- must be instances of 'Hashable' and 'Eq'.
 data CandidateHash
 
@@ -869,7 +869,7 @@ data SupplementalInt
 
 -- | 'SupplementalHash' keys are like 'Supplemental' keys but are backed by
 -- a 'HashMap' rather than a 'Map'. This makes them more performant
--- on '(==)' and '(/=)' lookups, but values at 'SupplementalHash' keys
+-- on @('==')@ and @('/=')@ lookups, but values at 'SupplementalHash' keys
 -- must be instances of 'Hashable' and 'Eq'.
 data SupplementalHash
 
