@@ -34,10 +34,13 @@ source-repository head
   location: git://github.com/ekmett/tables.git
 
 flag test-properties
+  description: Enable the properties test-suite.
   default: True
   manual: True
 
 flag transformers2
+  description: Enables the use of old versions of transformers. Users should
+               never care about this.
   default: False
   manual: False
 
