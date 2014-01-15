@@ -979,7 +979,7 @@ instance Serialize a => Serialize (Auto a) where
 
 instance SafeCopy a => SafeCopy (Auto a) where
   getCopy = contain $ Auto <$> safeGet <*> safeGet
-  putCopy (Auto k a) = contain $ safePut k >> safePut a  
+  putCopy (Auto k a) = contain $ safePut k >> safePut a
 
 instance Tabular (Auto a) where
   type PKT (Auto a) = Int
