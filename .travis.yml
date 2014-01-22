@@ -5,8 +5,6 @@ env:
   - GHCVER=7.6.3
 
 before_install:
-  # Grab lens 4.0
-  - git clone https://github.com/ekmett/lens.git
   # If $GHCVER is the one travis has, don't bother reinstalling it.
   # We can also have faster builds by installing some libraries with
   # `apt`. If it isn't, install the GHC we want from hvr's PPA along
@@ -14,9 +12,7 @@ before_install:
   - |
     if [ $GHCVER = `ghc --numeric-version` ]; then
       # Try installing some of the build-deps with apt-get for speed.
-      cd lens
       travis/cabal-apt-install $MODE
-      cd ..
       export CABAL=cabal
     else
       # Install the GHC we want from hvr's PPA
@@ -26,13 +22,12 @@ before_install:
       export CABAL=cabal-1.18
       export PATH=/opt/ghc/$GHCVER/bin:$PATH
     fi
+  - mkdir -p ~/.cabal
   # Uncomment whenever hackage is down.
-  # - mkdir -p ~/.cabal && cp travis/config ~/.cabal/config && $CABAL update
+  # - cp travis/config ~/.cabal/config
+  - 'echo "remote-repo: maxsbot.net:http://maxsbot.net/packages/archive" >> ~/.cabal/config'
   - $CABAL update
-  # Install the rest of lens' dependencies and build it.
-  - cd lens
-  - cabal install
-  - cd ..
+  - $CABAL install cpphs
 
 install:
   - $CABAL install --dependencies-only --enable-tests
