@@ -271,11 +271,6 @@ instance Foldable Table where
 type instance Index (Table t) = PKT t
 type instance IxValue (Table t) = t
 
-instance Contains (Table t) where
-  type Containing (Table t) f = (Contravariant f, Functor f)
-  contains k f EmptyTable = coerce $ indexed f k False
-  contains k f (Table m) = Table <$> primaryMap (contains k f) m
-
 instance Ixed (Table t) where
   ix _ _ EmptyTable = pure EmptyTable
   ix k f (Table m) = Table <$> primaryMap (ix k f) m
@@ -1060,11 +1055,6 @@ type instance IxValue (Value a) = a
 instance Each (Value a) (Value b) a b where
   each f (Value a) = Value <$> f a
   {-# INLINE each #-}
-
-instance Contains (Value a) where
-  type Containing (Value a) f = (Contravariant f, Functor f)
-  contains () pafb _ = coerce (indexed pafb () True)
-  {-# INLINE contains #-}
 
 instance Ixed (Value a) where
   ix () pafb (Value a) = Value <$> indexed pafb () a
