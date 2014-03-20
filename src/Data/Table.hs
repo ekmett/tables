@@ -131,7 +131,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   type PKT t
 
   -- | Used to store indices
-  data Tab t m
+  data Tab t (m :: * -> * -> *)
 
   -- | The type used internally for columns
   data Key (k :: *) t :: * -> *
@@ -365,7 +365,12 @@ makeTabular p ks = do
   keyVars  <- mapM (newName . nameBase . snd) keys
 
   return [InstanceD [] (AppT (ConT ''Tabular) t)
-    [ TySynInstD ''PKT [t] pkt
+    [
+#if MIN_VERSION_template_haskell(2,9,0)
+      TySynInstD ''PKT $ TySynEqn [t] pkt
+#else
+      TySynInstD ''PKT [t] pkt
+#endif
 
     , DataInstD [] ''Key [k, t, a] (zipWith (\(kk,n) kt ->
         ForallC [] [EqualP k (ConT kk), EqualP a kt]
