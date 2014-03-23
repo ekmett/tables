@@ -45,7 +45,9 @@ module Data.Table
   , Tab(..)
   , Key(..)
   -- ** Template Haskell helpers
+#if __GLASGOW_HASKELL__ < 708
   , makeTabular
+#endif
   -- ** Table Construction
   , empty
   , singleton
@@ -131,7 +133,7 @@ class Ord (PKT t) => Tabular (t :: *) where
   type PKT t
 
   -- | Used to store indices
-  data Tab t m
+  data Tab t (m :: * -> * -> *)
 
   -- | The type used internally for columns
   data Key (k :: *) t :: * -> *
@@ -327,6 +329,8 @@ emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
   SupplementalInt  -> SupplementalIntMap  IM.empty
 {-# INLINE emptyTab #-}
 
+
+#if __GLASGOW_HASKELL__ < 708
 -- * Public API
 
 -- | Generate a Tabular instance for a data type. Currently, this only
@@ -397,6 +401,8 @@ makeTabular p ks = do
     ]]
   where uppercase :: Name -> Name
         uppercase = iso nameBase mkName._head %~ toUpper
+
+#endif
 
 -- | Construct an empty relation
 empty :: Table t
