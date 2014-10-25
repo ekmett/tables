@@ -57,7 +57,7 @@ library
     profunctors          >= 4   && < 5,
     safecopy             >= 0.6.3 && < 0.9,
     template-haskell     >= 2.7 && < 2.10,
-    transformers         >= 0.2 && < 0.4,
+    transformers         >= 0.2 && < 0.5,
     transformers-compat  >= 0.1 && < 1,
     unordered-containers == 0.2.*
 
