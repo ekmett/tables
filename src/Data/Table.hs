@@ -50,6 +50,7 @@ module Data.Table
   , empty
   , singleton
   , table
+  , table'
   , fromList
   , unsafeFromList
   -- ** Combining Tables
@@ -217,16 +218,16 @@ instance (Tabular t, Data t) => Data (Table t) where
   dataCast1 f = gcast1 f
 
 instance (Tabular t, Binary t) => Binary (Table t) where
-  put = reviews table B.put
-  get = view table <$> B.get
+  put = reviews table' B.put
+  get = view table' <$> B.get
 
 instance (Tabular t, Serialize t) => Serialize (Table t) where
-  put = reviews table C.put
+  put = reviews table' C.put
   get = view table <$> C.get
 
 instance (Typeable t, Tabular t, SafeCopy t) => SafeCopy (Table t) where
-  putCopy = contain . reviews table safePut
-  getCopy = contain $ view table <$> safeGet
+  putCopy = contain . reviews table' safePut
+  getCopy = contain $ view table' <$> safeGet
   errorTypeName pt = show $ typeOf (undefined `asProxyTypeOf` pt)
     where asProxyTypeOf :: a -> p a -> a
           asProxyTypeOf a _ = a
@@ -500,9 +501,16 @@ count (Table m)  = M.size (m^.primaryMap)
 -- @'from' 'table' '.' 'table' ≡ 'id'@
 --
 -- always holds.
-table :: Tabular t => Iso' [t] (Table t)
+--
+-- Note that the types of 'table' make it easy to lose inference, requiring type annotation.
+-- You may wish to considering using 'table'' instead.
+table :: (Tabular s, Tabular t) => Iso [s] [t] (Table s) (Table t)
 table = iso fromList toList
 {-# INLINE table #-}
+
+table' :: Tabular t => Iso' [t] (Table t)
+table' = table
+{-# INLINE table' #-}
 
 instance (Tabular b, PKT a ~ PKT b) => Each (Table a) (Table b) a b where
   each _ EmptyTable = pure EmptyTable
