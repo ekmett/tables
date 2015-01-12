@@ -366,18 +366,10 @@ makeTabular p ks = do
 
   return [InstanceD [] (AppT (ConT ''Tabular) t)
     [
-#if MIN_VERSION_template_haskell(2,9,0)
-      TySynInstD ''PKT $ TySynEqn [t] pkt
-#else
-      TySynInstD ''PKT [t] pkt
-#endif
+      tySynInstD' ''PKT [t] pkt
 
     , DataInstD [] ''Key [k, t, a] (zipWith (\(kk,n) kt ->
-#if MIN_VERSION_template_haskell(2,10,0)
-        ForallC [] [AppT (AppT EqualityT k) (ConT kk), AppT (AppT EqualityT a) kt]
-#else
-        ForallC [] [EqualP k (ConT kk), EqualP a kt]
-#endif
+        ForallC [] [equalP' k (ConT kk), equalP' a kt]
           (NormalC (uppercase n) [])) keys keyTypes) []
 
     , DataInstD [] ''Tab [t, a] [NormalC tabName $ zipWith
@@ -1154,3 +1146,20 @@ instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Inverted (Set
 
 instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t InvertedHash (HashSet a)) where
     rnf (InvertedHashMap m) = rnf m
+
+
+-- Compatibility for equality predicates across TH versions
+equalP' :: Type -> Type -> Pred
+#if MIN_VERSION_template_haskell(2,10,0)
+equalP' = AppT . AppT EqualityT
+#else
+equalP' = EqualP
+#endif
+
+-- | Compatibility shim for recent changes to template haskell's 'tySynInstD'
+tySynInstD' :: Name -> [Type] -> Type -> Dec
+#if MIN_VERSION_template_haskell(2,9,0)
+tySynInstD' fam ts r = TySynInstD fam (TySynEqn ts r)
+#else
+tySynInstD' = TySynInstD
+#endif
