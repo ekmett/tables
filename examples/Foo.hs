@@ -32,7 +32,9 @@ import Prelude hiding (null)
 data Foo a = Foo { fooId :: Int, fooBar :: a, fooBaz :: Double }
   deriving (Eq,Ord,Show,Read,Data,Typeable)
 
-makeLensesWith ?? ''Foo $ defaultRules & lensField .~ \x -> Just (x ++ "_")
+makeLensesFor
+  [("fooId", "fooId_"), ("fooBar", "fooBar_"), ("fooBaz","fooBaz_")]
+  ''Foo
 
 instance Tabular (Foo a) where
   type PKT (Foo a) = Int
