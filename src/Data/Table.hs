@@ -59,7 +59,7 @@ module Data.Table
   , difference
   , intersection
   -- ** Reading and Writing
-  , null
+  , Data.Table.null
   , count
   , With(..)
   , Withal(..)
@@ -369,10 +369,11 @@ makeTabular p ks = do
   keyVars  <- mapM (newName . nameBase . snd) keys
 
   return [InstanceD [] (AppT (ConT ''Tabular) t)
-    [ TySynInstD ''PKT [t] pkt
+    [
+      tySynInstD' ''PKT [t] pkt
 
     , DataInstD [] ''Key [k, t, a] (zipWith (\(kk,n) kt ->
-        ForallC [] [EqualP k (ConT kk), EqualP a kt]
+        ForallC [] [equalP' k (ConT kk), equalP' a kt]
           (NormalC (uppercase n) [])) keys keyTypes) []
 
     , DataInstD [] ''Tab [t, a] [NormalC tabName $ zipWith
@@ -576,17 +577,17 @@ instance Applicative f => Group f (Key SupplementalHash t a) t a where
     SupplementalHashMap idx -> traverse (\(k,vs) -> indexed f k (fromList vs)) (HM.toList idx) <&> mconcat
   {-# INLINE group #-}
 
-instance (Applicative f, Gettable f) => Group f (Key Inverted t (Set a)) t a where
+instance (Applicative f, Contravariant f) => Group f (Key Inverted t (Set a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
 
-instance (Applicative f, Gettable f, a ~ Int) => Group f (Key InvertedInt t IntSet) t a where
+instance (Applicative f, Contravariant f, a ~ Int) => Group f (Key InvertedInt t IntSet) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedIntMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ IM.toList idx
 
-instance (Applicative f, Gettable f) => Group f (Key InvertedHash t (HashSet a)) t a where
+instance (Applicative f, Contravariant f) => Group f (Key InvertedHash t (HashSet a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
     InvertedHashMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ HM.toList idx
@@ -1152,3 +1153,19 @@ instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Inverted (Set
 instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t InvertedHash (HashSet a)) where
     rnf (InvertedHashMap m) = rnf m
 
+
+-- Compatibility for equality predicates across TH versions
+equalP' :: Type -> Type -> Pred
+#if MIN_VERSION_template_haskell(2,10,0)
+equalP' = AppT . AppT EqualityT
+#else
+equalP' = EqualP
+#endif
+
+-- | Compatibility shim for recent changes to template haskell's 'tySynInstD'
+tySynInstD' :: Name -> [Type] -> Type -> Dec
+#if MIN_VERSION_template_haskell(2,9,0)
+tySynInstD' fam ts r = TySynInstD fam (TySynEqn ts r)
+#else
+tySynInstD' = TySynInstD
+#endif

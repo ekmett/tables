@@ -1,3 +1,13 @@
+0.4.1.1
+----
+* GHC 7.10 compatibility
+
+0.4.1
+----
+
+0.4
+----
+
 0.3.1
 -----
 * Improved `Setup.lhs` to work with more versions of `cabal`.
