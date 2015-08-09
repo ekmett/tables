@@ -1,7 +1,7 @@
 Tables
 ======
 
-[![Hackage](https://img.shields.io/hackage/v/tables.svg)](https://hackage.haskell.org/package/tables) [![Build Status](https://secure.travis-ci.org/ekmett/tables.png?branch=master)](http://travis-ci.org/ekmett/tables
+[![Hackage](https://img.shields.io/hackage/v/tables.svg)](https://hackage.haskell.org/package/tables) [![Build Status](https://secure.travis-ci.org/ekmett/tables.png?branch=master)](http://travis-ci.org/ekmett/tables)
 
 This package provides simple in memory data tables with multiple indices.
 
