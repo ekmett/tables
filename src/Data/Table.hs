@@ -97,6 +97,7 @@ import Control.Monad
 import Control.Monad.Fix
 import Data.Binary (Binary)
 import qualified Data.Binary as B
+import Data.Bytes.Serial (Serial(..))
 import Data.Char (toUpper)
 import Data.Data
 import Data.Foldable as F hiding (foldl1)
@@ -225,6 +226,10 @@ instance (Tabular t, Binary t) => Binary (Table t) where
 instance (Tabular t, Serialize t) => Serialize (Table t) where
   put = reviews table C.put
   get = view table <$> C.get
+
+instance (Tabular t, Serial t) => Serial (Table t) where
+  serialize = reviews table serialize
+  deserialize = view table <$> deserialize
 
 instance (Typeable t, Tabular t, SafeCopy t) => SafeCopy (Table t) where
   putCopy = contain . reviews table safePut
