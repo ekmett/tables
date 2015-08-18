@@ -47,6 +47,7 @@ module Data.Table
   -- ** Template Haskell helpers
 #if __GLASGOW_HASKELL__ < 708
   , makeTabular
+  , makeTabularFor
 #endif
   -- ** Table Construction
   , empty
@@ -348,8 +349,21 @@ emptyTab = runIdentity $ mkTab $ \k -> Identity $ case keyType k of
 -- @
 makeTabular :: Name -> [(Name, Name)] -> Q [Dec]
 makeTabular p ks = do
+  makeTabularFor (f p) (over (traverse._2) f ks)
+  where f :: Name -> (String, Name)
+        f n = (n & nameBase & _head %~ toUpper, n)
+
+-- | Generate a Tabular instance for a data type. Currently, this only
+-- works for types which have no type variables, and won't generate autoTab.
+--
+-- @
+-- data Foo = Foo { _fooId :: Int, _fooBar :: String, _fooBaz :: Double }
+--
+-- makeTabularFor ("FooId", '_fooId) [(''Candidate, ("FooBaz", '_fooBaz)), (''Supplemental, ("FooBar", '_fooBar))]
+-- @
+makeTabularFor :: (String, Name) -> [(Name, (String, Name))] -> Q [Dec]
+makeTabularFor pp@(iName, p) ks = do
   -- Get the type name and PKT from the primary selector
-  -- FIXME: Work for more flexible type names
   VarI _ (AppT (AppT ArrowT t) pkt) _ _ <- reify p
 
 
@@ -358,10 +372,10 @@ makeTabular p ks = do
   a <- VarT <$> newName "a"
   f <- newName "f"
 
-  tabName <- newName $ "Tab_" ++ nameBase p
+  tabName <- newName $ "Tab_" ++ iName
 
-  let keys = (''Primary, p) : ks
-      keyCons@(pK:_) = map (uppercase.snd) keys
+  let keys = (''Primary, pp) : ks
+      keyCons@(pK:_) = map (mkName.fst.snd) keys
 
       idiom, idiom' :: [Exp] -> Exp
       idiom' = foldl1 (\l r -> AppE (AppE (VarE '(<*>)) l) r)
@@ -369,23 +383,22 @@ makeTabular p ks = do
       idiom [] = AppE (VarE 'pure) (ConE '())
       idiom (x:xs) = idiom' $ AppE (VarE 'pure) x : xs
 
-  -- FIXME: Work for more flexible type names
-  keyTypes <- map (\(VarI _ (AppT _ t) _ _) -> t) <$> mapM (reify . snd) keys
-  keyVars  <- mapM (newName . nameBase . snd) keys
+  keyTypes <- map (\(VarI _ (AppT _ t) _ _) -> t) <$> mapM (reify . snd . snd) keys
+  keyVars  <- mapM (newName . nameBase . snd . snd) keys
 
   return [InstanceD [] (AppT (ConT ''Tabular) t)
     [
       tySynInstD' ''PKT [t] pkt
 
-    , DataInstD [] ''Key [k, t, a] (zipWith (\(kk,n) kt ->
+    , DataInstD [] ''Key [k, t, a] (zipWith (\(kk,(n,_)) kt ->
         ForallC [] [equalP' k (ConT kk), equalP' a kt]
-          (NormalC (uppercase n) [])) keys keyTypes) []
+          (NormalC (mkName n) [])) keys keyTypes) []
 
     , DataInstD [] ''Tab [t, a] [NormalC tabName $ zipWith
         (\(k,_) t -> (NotStrict, AppT (AppT a (ConT k)) t)) keys keyTypes] []
 
-    , FunD 'fetch $ map (\(_,k) ->
-        Clause [ConP (uppercase k) []] (NormalB (VarE k)) []) keys
+    , FunD 'fetch $ map (\(_,(n,k)) ->
+        Clause [ConP (mkName n) []] (NormalB (VarE k)) []) keys
 
     , ValD (VarP 'primary) (NormalB (ConE pK)) []
 
@@ -405,8 +418,6 @@ makeTabular p ks = do
         (\c x -> Match (ConP c []) (NormalB $ VarE x) []) keyCons keyVars
       ) []]
     ]]
-  where uppercase :: Name -> Name
-        uppercase = iso nameBase mkName._head %~ toUpper
 
 #endif
 
