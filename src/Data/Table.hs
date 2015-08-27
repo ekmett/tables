@@ -100,9 +100,12 @@ import Control.Monad.Fix
 import Data.Binary (Binary)
 import qualified Data.Binary as B
 import Data.Bytes.Serial (Serial(..))
+#if __GLASGOW_HASKELL__ < 708
 import Data.Char (toUpper)
+#endif
 import Data.Data
 import Data.Foldable as F hiding (foldl1)
+import Data.Functor.Contravariant
 import Data.Function (on)
 import Data.Hashable
 import Data.HashMap.Strict (HashMap)
@@ -123,7 +126,9 @@ import qualified Data.Serialize as C
 import Data.Set (Set)
 import qualified Data.Set as S
 import Data.Traversable hiding (mapM)
+#if __GLASGOW_HASKELL__ < 708
 import Language.Haskell.TH
+#endif
 import qualified Prelude as P
 import Prelude hiding (null)
 
@@ -604,17 +609,17 @@ instance Applicative f => Group f (Key SupplementalHash t a) t a where
 instance (Applicative f, Contravariant f) => Group f (Key Inverted t (Set a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    InvertedMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
+    InvertedMap idx -> phantom $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ M.toList idx
 
 instance (Applicative f, Contravariant f, a ~ Int) => Group f (Key InvertedInt t IntSet) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    InvertedIntMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ IM.toList idx
+    InvertedIntMap idx -> phantom $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ IM.toList idx
 
 instance (Applicative f, Contravariant f) => Group f (Key InvertedHash t (HashSet a)) t a where
   group _  _ EmptyTable = pure EmptyTable
   group ky f (Table m)  = case ixTab m ky of
-    InvertedHashMap idx -> coerce $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ HM.toList idx
+    InvertedHashMap idx -> phantom $ traverse (\(k,vs) -> indexed f k (fromList vs)) $ HM.toList idx
 
 -- | Search inverted indices
 class Withal q s t | q -> s t where
@@ -1177,6 +1182,7 @@ instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t Inverted (Set
 instance (NFData t, NFData a, NFData (PKT t)) => NFData (AnIndex t InvertedHash (HashSet a)) where
     rnf (InvertedHashMap m) = rnf m
 
+#if __GLASGOW_HASKELL__ < 708
 
 -- Compatibility for equality predicates across TH versions
 equalP' :: Type -> Type -> Pred
@@ -1192,4 +1198,6 @@ tySynInstD' :: Name -> [Type] -> Type -> Dec
 tySynInstD' fam ts r = TySynInstD fam (TySynEqn ts r)
 #else
 tySynInstD' = TySynInstD
+#endif
+
 #endif
