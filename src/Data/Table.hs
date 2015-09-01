@@ -458,7 +458,7 @@ singleton row = Table $ runIdentity $ mkTab $ \ k -> Identity $ case keyType k o
   InvertedHash     -> InvertedHashMap          $ HS.foldl' (\m k -> HM.insert k [row] m) HM.empty (fetch k row)
 {-# INLINE singleton #-}
 
--- | Return the set of rows that would be delete by deleting or inserting this row
+-- | Return the set of rows that would be deleted by deleting or inserting this row
 collisions :: t -> Table t -> [t]
 collisions _ EmptyTable = []
 collisions t (Table m)  = getConst $ forTab m $ \k i -> Const $ case i of
