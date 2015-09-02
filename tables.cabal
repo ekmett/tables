@@ -89,3 +89,23 @@ test-suite doctests
   if impl(ghc<7.6.1)
     ghc-options: -Werror
   hs-source-dirs: tests
+
+test-suite hspec
+  type:    exitcode-stdio-1.0
+  main-is: hspec.hs
+  build-depends:
+    base,
+    containers,
+    directory >= 1.0,
+    doctest >= 0.9.1,
+    filepath,
+    hspec,
+    hspec-discover,
+    lens,
+    tables,
+    transformers,
+    unordered-containers
+  ghc-options: -Wall -threaded
+  if impl(ghc<7.6.1)
+    ghc-options: -Werror
+  hs-source-dirs: tests
