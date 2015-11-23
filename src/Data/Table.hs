@@ -291,7 +291,11 @@ type instance IxValue (Table t) = t
 
 instance Ixed (Table t) where
   ix _ _ EmptyTable = pure EmptyTable
-  ix k f (Table m) = Table <$> primaryMap (ix k f) m
+  ix k f t@(Table m) =
+    let oldRow' = m ^? primaryMap . ix k
+    in case oldRow' of
+      Nothing -> pure t
+      Just oldRow -> f oldRow <&> \newRow -> insert newRow $ deleteWith primary (==) (fetch primary oldRow) t
   {-# INLINE ix #-}
 
 instance Tabular t => At (Table t) where
