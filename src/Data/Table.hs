@@ -300,7 +300,13 @@ instance Ixed (Table t) where
 
 instance Tabular t => At (Table t) where
   at k f EmptyTable = maybe EmptyTable singleton <$> indexed f k Nothing
-  at k f (Table m)  = Table <$> primaryMap (at k f) m
+  at k f t@(Table m) =
+    let oldRow' = m ^? primaryMap . ix k
+    in f oldRow' <&> \newRow' -> case (oldRow', newRow') of
+      (Nothing, Nothing) -> t
+      (Nothing, Just newRow) -> insert newRow t
+      (Just oldRow, Nothing) -> deleteWith primary (==) (fetch primary oldRow) t
+      (Just oldRow, Just newRow) -> insert newRow $ deleteWith primary (==) (fetch primary oldRow) t
   {-# INLINE at #-}
 
 deleteCollisions :: Table t -> [t] -> Table t
