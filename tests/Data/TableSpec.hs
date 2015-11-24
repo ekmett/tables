@@ -35,19 +35,22 @@ instance Tabular Foo where
   ixTab (FooTab _ b) FooV = b
 
 
-tableA, tableB, tableC, tableD, tableE, tableF, tableG, tableH, tableI,
- tableA', tableB', tableC', tableD', tableE', tableF', tableG', tableH', tableI' :: Table Foo
+tableA, tableB, tableC, tableD, tableE, tableF, tableG, tableH, tableI, tableJ,
+ tableA', tableB', tableC', tableD', tableE', tableF', tableG', tableH', tableI', tableJ',
+ tableB_at, tableD_at, tableJ_at :: Table Foo
 
 tableA = fromList [Foo "a" "A", Foo "b" "hello"]
 tableA' = fromList [Foo {_k = "a", _v = "A"}, Foo {_k = "b", _v = "hello"}]
 
 tableB = insert (Foo "a" "Y") tableA
+tableB_at = tableA & at "a" .~ Just (Foo "a" "Y")
 tableB' = fromList [Foo {_k = "a", _v = "Y"}, Foo {_k = "b", _v = "hello"}]
 
 tableC = tableB ^. with FooV (/=) ""
 tableC' = fromList [Foo {_k = "a", _v = "Y"}, Foo {_k = "b", _v = "hello"}]
 
 tableD = (tableA & ix "a" . v .~ "OH! NO!") ^. with FooV (/=) ""
+tableD_at = (tableA & at "a" . _Just . v .~ "OH! NO!") ^. with FooV (/=) ""
 tableD' = fromList [Foo {_k = "a", _v = "OH! NO!"}, Foo {_k = "b", _v = "hello"}]
 
 tableE = tableC ^. with FooV (/=) ""
@@ -65,6 +68,9 @@ tableH' = fromList [Foo {_k = "a", _v = "Y"}]
 tableI = tableC ^. with _v (==) "Y"
 tableI' = fromList [Foo {_k = "a", _v = "Y"}]
 
+tableJ = delete (Foo "a" "A") tableA
+tableJ_at = tableA & at "a" .~ Nothing
+tableJ' = fromList [Foo {_k = "b", _v = "hello"}]
 
 tests :: IO ()
 tests = hspec spec
@@ -74,6 +80,7 @@ spec = describe "Data.Table" . it "unit tests" $ do
   mapM_ (\ (i :: String, t, t') -> (i, t) `shouldBe` (i, t'))
     [ ("A", tableA, tableA')
     , ("B", tableB, tableB')
+    , ("B at", tableB_at, tableB')
     , ("C", tableC, tableC')
     , ("E", tableE, tableE')
     , ("F", tableF, tableF')
@@ -81,4 +88,7 @@ spec = describe "Data.Table" . it "unit tests" $ do
     , ("H", tableH, tableH')
     , ("I", tableI, tableI')
     , ("D", tableD, tableD')
+    , ("D at", tableD_at, tableD')
+    , ("J", tableJ, tableJ')
+    , ("J at", tableJ_at, tableJ')
     ]

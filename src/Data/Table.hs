@@ -94,7 +94,7 @@ module Data.Table
 import Control.Applicative hiding (empty)
 import Control.Comonad
 import Control.DeepSeq (NFData(rnf))
-import Control.Lens hiding (anon)
+import Control.Lens
 import Control.Monad
 import Control.Monad.Fix
 import Data.Binary (Binary)
@@ -197,6 +197,10 @@ data AnIndex t k a where
   SupplementalMap     :: Ord a              => Map a [t]          -> AnIndex t Supplemental     a
 
 -- | Find the primary key index a tab
+--
+-- Note that while this is obeys the lens laws, using this to modify the tab
+-- breaks an invariant of Table, as it only adjust the primary key's map and not
+-- any of the others!
 primaryMap :: Tabular t => Lens' (Tab t (AnIndex t)) (Map (PKT t) t)
 primaryMap f t = case ixTab t primary of
   PrimaryMap m -> f m <&> \u -> runIdentity $ forTab t $ \k o -> Identity $ case o of
@@ -287,24 +291,23 @@ type instance IxValue (Table t) = t
 
 instance Ixed (Table t) where
   ix _ _ EmptyTable = pure EmptyTable
-  ix k f (Table m) = Table <$> primaryMap (ix k f) m
+  ix k f t@(Table m) =
+    let oldRow' = m ^? primaryMap . ix k
+    in case oldRow' of
+      Nothing -> pure t
+      Just oldRow -> f oldRow <&> \newRow -> insert newRow $ deleteWith primary (==) (fetch primary oldRow) t
   {-# INLINE ix #-}
 
 instance Tabular t => At (Table t) where
   at k f EmptyTable = maybe EmptyTable singleton <$> indexed f k Nothing
-  at k f (Table m)  = Table <$> primaryMap (at k f) m
+  at k f t@(Table m) =
+    let oldRow' = m ^? primaryMap . ix k
+    in f oldRow' <&> \newRow' -> case (oldRow', newRow') of
+      (Nothing, Nothing) -> t
+      (Nothing, Just newRow) -> insert newRow t
+      (Just oldRow, Nothing) -> deleteWith primary (==) (fetch primary oldRow) t
+      (Just oldRow, Just newRow) -> insert newRow $ deleteWith primary (==) (fetch primary oldRow) t
   {-# INLINE at #-}
-
-anon :: APrism' a () -> Iso' (Maybe a) a
-anon p = iso (fromMaybe def) go where
-  def                           = review (clonePrism p) ()
-  go b | has (clonePrism p) b   = Nothing
-       | otherwise              = Just b
-{-# INLINE anon #-}
-
-nil :: Prism' [a] ()
-nil = prism' (const []) (guard . P.null)
-{-# INLINE nil #-}
 
 deleteCollisions :: Table t -> [t] -> Table t
 deleteCollisions EmptyTable _ = EmptyTable
@@ -314,17 +317,17 @@ deleteCollisions (Table tab) ts = Table $ runIdentity $ forTab tab $ \k i -> Ide
   CandidateIntMap idx     -> CandidateIntMap          $ F.foldl' (flip (IM.delete . fetch k)) idx ts
   CandidateHashMap idx    -> CandidateHashMap         $ F.foldl' (flip (HM.delete . fetch k)) idx ts
   SupplementalMap idx     -> SupplementalMap $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon nil %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+    m & at ky . non' _Empty %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   SupplementalIntMap idx  -> SupplementalIntMap $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon nil %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+    m & at ky . non' _Empty %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   SupplementalHashMap idx -> SupplementalHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (fetch k t, [t]) | t <- ts ] $ \m ky ys ->
-    m & at ky . anon nil %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+    m & at ky . non' _Empty %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   InvertedMap idx         -> InvertedMap     $ M.foldlWithKey' ?? idx ?? M.fromListWith (++) [ (f, [t]) | t <- ts, f <- S.toList $ fetch k t ] $ \m ky ys ->
-    m & at ky . anon nil %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+    m & at ky . non' _Empty %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   InvertedIntMap idx      -> InvertedIntMap  $ IM.foldlWithKey' ?? idx ?? IM.fromListWith (++) [ (f, [t]) | t <- ts, f <- IS.toList $ fetch k t ] $ \m ky ys ->
-    m & at ky . anon nil %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+    m & at ky . non' _Empty %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
   InvertedHashMap idx     -> InvertedHashMap $ HM.foldlWithKey' ?? idx ?? HM.fromListWith (++) [ (f, [t]) | t <- ts, f <- HS.toList $ fetch k t ] $ \m ky ys ->
-    m & at ky . anon nil %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
+    m & at ky . non' _Empty %~ let pys = fetch primary <$> ys in filter (\e -> fetch primary e `P.notElem` pys)
 {-# INLINE deleteCollisions #-}
 
 emptyTab :: Tabular t => Tab t (AnIndex t)
@@ -501,12 +504,12 @@ unsafeInsert t r = case r of
     CandidateMap idx        -> CandidateMap             $ idx & at (fetch k t) ?~ t
     CandidateIntMap idx     -> CandidateIntMap          $ idx & at (fetch k t) ?~ t
     CandidateHashMap idx    -> CandidateHashMap         $ idx & at (fetch k t) ?~ t
-    SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . anon nil %~ (t:)
-    SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . anon nil %~ (t:)
-    SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . anon nil %~ (t:)
-    InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . anon nil %~ (t:)) (fetch k t)
-    InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . anon nil %~ (t:)) (fetch k t)
-    InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . anon nil %~ (t:)) (fetch k t)
+    SupplementalMap idx     -> SupplementalMap          $ idx & at (fetch k t) . non' _Empty %~ (t:)
+    SupplementalIntMap idx  -> SupplementalIntMap       $ idx & at (fetch k t) . non' _Empty %~ (t:)
+    SupplementalHashMap idx -> SupplementalHashMap      $ idx & at (fetch k t) . non' _Empty %~ (t:)
+    InvertedMap idx         -> InvertedMap              $ idx & flip (F.foldr $ \ik -> at ik . non' _Empty %~ (t:)) (fetch k t)
+    InvertedIntMap idx      -> InvertedIntMap           $ idx & flip (IS.foldr $ \ik -> at ik . non' _Empty %~ (t:)) (fetch k t)
+    InvertedHashMap idx     -> InvertedHashMap          $ idx & flip (F.foldr $ \ik -> at ik . non' _Empty %~ (t:)) (fetch k t)
 {-# INLINE unsafeInsert #-}
 
 -- | Retrieve a row count.
