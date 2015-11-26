@@ -5,6 +5,7 @@
 
 module Data.TableSpec where
 
+import Control.Applicative
 import Control.Lens
 import Data.Table
 import Test.Hspec
